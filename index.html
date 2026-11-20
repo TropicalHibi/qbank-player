@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="description" content="Play board-style (USMLE Step 1 / COMLEX Level 1) multiple-choice question sets from JSON files. Runs entirely in your browser." />
+    <title>qbank-player</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5fbf'/%3E%3Cpath d='M9 17l5 5 9-12' fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="css/styles.css" />
+    <script src="js/theme-init.js"></script>
+    <script type="module" src="js/app.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <a class="brand" href="./">qbank<span>-player</span></a>
+      <nav class="site-nav" aria-label="Main">
+        <a href="./" aria-current="page">Library</a>
+        <a href="create.html">Create your own</a>
+      </nav>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle theme">☾</button>
+    </header>
+
+    <main id="main" tabindex="-1">
+      <noscript>
+        <div class="notice notice-error">qbank-player needs JavaScript. It also needs to be served over HTTP (for example <code>python3 -m http.server</code>), not opened as a file.</div>
+      </noscript>
+
+      <div id="loading" class="loading" role="status">Loading…</div>
+
+      <!-- Library -->
+      <section id="view-library" class="view" aria-labelledby="lib-title" hidden>
+        <h1 id="lib-title" tabindex="-1">Question library</h1>
+        <p class="lede">
+          Play board-style multiple-choice question sets in tutor or exam mode. Load a set below, or
+          <a href="create.html">create your own with Claude</a>.
+        </p>
+
+        <div id="load-errors" class="notice notice-error" role="alert" hidden></div>
+
+        <div class="load-grid">
+          <div class="card dropzone">
+            <h2>Load a file</h2>
+            <p>Drag and drop a <code>.json</code> question set anywhere on this page, or:</p>
+            <p>
+              <label class="btn btn-primary file-btn">
+                Choose file…
+                <input type="file" id="file-input" accept=".json,application/json,text/plain" class="sr-only" />
+              </label>
+            </p>
+            <p class="muted small">Files are read in your browser and never uploaded.</p>
+          </div>
+          <form class="card" id="paste-form">
+            <h2><label for="paste-input">Paste JSON</label></h2>
+            <textarea id="paste-input" rows="6" spellcheck="false" autocomplete="off" placeholder='{"title": "…", "version": 1, "questions": [ … ]}'></textarea>
+            <p class="hint">Code fences and text around the JSON are ignored.</p>
+            <p><button class="btn" type="submit">Load pasted JSON</button></p>
+          </form>
+        </div>
+
+        <section aria-labelledby="recent-title" id="recent-section" hidden>
+          <h2 id="recent-title">Recent</h2>
+          <ul id="recent-list" class="set-list"></ul>
+        </section>
+
+        <section aria-labelledby="bundled-title">
+          <h2 id="bundled-title">Bundled sets</h2>
+          <ul id="bundled-list" class="set-list">
+            <li class="empty">Loading…</li>
+          </ul>
+        </section>
+      </section>
+
+      <!-- Start / Quiz / Results are rendered by JS -->
+      <section id="view-start" class="view" aria-labelledby="start-title" hidden></section>
+      <section id="view-quiz" class="view" aria-label="Quiz" hidden></section>
+      <section id="view-results" class="view" aria-labelledby="results-title" hidden></section>
+    </main>
+
+    <div id="drop-overlay" class="drop-overlay" aria-hidden="true" hidden><div>Drop the .json file to load it</div></div>
+
+    <footer class="site-footer">
+      <p>
+        Local files stay in your browser. ·
+        <a href="https://github.com/tropicalhibi/qbank-player">Source</a> · MIT License
+      </p>
+    </footer>
+  </body>
+</html>

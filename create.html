@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="description" content="Generate a prompt that makes Claude (or another LLM) write a question set qbank-player can play." />
+    <title>Create your own · qbank-player</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5fbf'/%3E%3Cpath d='M9 17l5 5 9-12' fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="css/styles.css" />
+    <script src="js/theme-init.js"></script>
+    <script type="module" src="js/create.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <a class="brand" href="./">qbank<span>-player</span></a>
+      <nav class="site-nav" aria-label="Main">
+        <a href="./">Library</a>
+        <a href="create.html" aria-current="page">Create your own</a>
+      </nav>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle theme">☾</button>
+    </header>
+
+    <main id="main" tabindex="-1">
+      <h1>Create your own question set</h1>
+      <p class="lede">
+        qbank-player plays JSON question sets. The easiest way to make one is to have Claude (or another LLM) write it
+        from your notes, lecture slides or a topic you choose.
+      </p>
+
+      <ol class="steps">
+        <li><strong>Copy the prompt</strong> below after adjusting the options.</li>
+        <li>
+          <strong>Paste it into Claude</strong> (or another LLM) in a new chat, and attach your study material if you have
+          some.
+        </li>
+        <li>
+          <strong>Load the JSON it produces</strong>: download the file or copy the code block, then drop or paste it in
+          the <a href="./">Library</a>.
+        </li>
+      </ol>
+
+      <div class="tabs" role="tablist" aria-label="Ways to create a set" id="tabs"></div>
+      <div id="tab-panels"></div>
+
+      <section class="extras" aria-labelledby="extras-title">
+        <h2 id="extras-title">Reference</h2>
+        <p class="muted">
+          The prompt already includes the full schema. These are handy if you write or fix sets by hand.
+        </p>
+        <div class="btn-row">
+          <button class="btn" type="button" id="download-schema">Download schema.json</button>
+          <button class="btn" type="button" id="copy-example">Copy example question</button>
+        </div>
+      </section>
+
+      <template id="tpl-prompt">
+        <div class="gen-grid">
+          <form id="prompt-form" class="card" aria-label="Prompt options">
+            <div class="field">
+              <label for="opt-n">Number of questions</label>
+              <input type="number" id="opt-n" name="n" min="1" max="200" value="10" inputmode="numeric" />
+              <p class="hint">Very large sets may get cut off by the model's output limit; 10–25 per request works well.</p>
+            </div>
+            <div class="field">
+              <label for="opt-style">Exam style</label>
+              <select id="opt-style" name="style">
+                <option value="usmle">USMLE Step 1</option>
+                <option value="comlex">COMLEX Level 1</option>
+                <option value="both">Both</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="opt-topic">Topic / focus</label>
+              <input type="text" id="opt-topic" name="topic" placeholder="e.g. renal acid-base, antiarrhythmics" autocomplete="off" />
+              <p class="hint">Leave blank to base it on whatever material you attach.</p>
+            </div>
+            <div class="field">
+              <label for="opt-options">Options per question</label>
+              <select id="opt-options" name="options">
+                <option value="4">4</option>
+                <option value="5" selected>5</option>
+                <option value="6">6</option>
+              </select>
+            </div>
+            <fieldset>
+              <legend>Difficulty</legend>
+              <div class="radio-col">
+                <label><input type="radio" name="difficulty" value="standard" checked /> Standard</label>
+                <label><input type="radio" name="difficulty" value="hard" /> Hard</label>
+              </div>
+            </fieldset>
+          </form>
+          <div class="preview">
+            <div class="preview-head">
+              <h2><label for="prompt-preview">Prompt preview</label></h2>
+              <button class="btn btn-primary" type="button" id="copy-prompt">Copy prompt</button>
+            </div>
+            <textarea id="prompt-preview" readonly spellcheck="false"></textarea>
+          </div>
+        </div>
+      </template>
+    </main>
+
+    <footer class="site-footer">
+      <p>
+        Anything you paste into an LLM is sent to that provider. Sets you load here stay in your browser. ·
+        <a href="https://github.com/tropicalhibi/qbank-player">Source</a> · MIT License
+      </p>
+    </footer>
+  </body>
+</html>
