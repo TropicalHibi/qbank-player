@@ -5,7 +5,7 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "test": "node tests/validate.test.mjs && node tests/setops.test.mjs",
+    "test": "node tests/validate.test.mjs && node tests/setops.test.mjs && node tests/backup.test.mjs",
     "smoke": "node tests/smoke.mjs",
     "serve": "python3 -m http.server 8000"
   },

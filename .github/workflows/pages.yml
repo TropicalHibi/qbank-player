@@ -29,6 +29,7 @@ jobs:
         run: |
           node tests/validate.test.mjs
           node tests/setops.test.mjs
+          node tests/backup.test.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
