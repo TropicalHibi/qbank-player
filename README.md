@@ -33,7 +33,7 @@ On the **Library** page you can load a set in four ways:
 - paste the JSON into the text box. Markdown code fences and chatty text around the JSON are ignored;
 - open a link like `?set=sets/example.json` or `?set=https://example.org/my-set.json`. For another site, that server has to allow cross-origin requests (CORS).
 
-After a set loads you pick the mode, timer, shuffling, a tag filter (or **Missed last session**) and how many questions to use, then start.
+After a set loads you pick the mode, timer, shuffling, whether to ask for confidence, a tag filter (or **Missed last session**) and how many questions to use, then start.
 
 ### Keyboard shortcuts
 
@@ -43,8 +43,13 @@ After a set loads you pick the mode, timer, shuffling, a tag filter (or **Missed
 | `Enter` | Tutor mode: submit the selected answer, then go to the next question. Exam mode: next question. Finish / Submit on the last one |
 | `Shift` + `A`–`H` or `1`–`8` | Strike out an option, or restore it |
 | `F` | Flag or unflag the question |
+| `Q` / `W` / `R` | Confidence: Low / Medium / High. Press the same key again to clear it. Inside the confidence control, `←` / `→` move between values |
 | `←` / `→` | Previous / next. In tutor mode you can only go back to answered questions |
 | `Esc` | Close a dialog or the image viewer |
+
+### Confidence
+
+Below the options you can rate how sure you are: **Confidence: Low · Medium · High**. Rating is optional and never changes your score; click the active value again to clear it. In tutor mode, rate before you submit; the rating is then locked and shown read-only. In exam mode you can change it until you submit the exam. Turn off **Ask for confidence** on the start screen to hide the control.
 
 ### Highlighting
 

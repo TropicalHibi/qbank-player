@@ -71,6 +71,7 @@ export function poolIds(set, { tags = null, restrictIds = null } = {}) {
  * @param {number} [o.timerSec] exam per-question seconds (0 = untimed)
  * @param {number} [o.seed]
  * @param {string} [o.label] e.g. "Redo missed"
+ * @param {boolean} [o.askConfidence] show the confidence rating control (default true)
  */
 export function buildSession(set, o = {}) {
   const {
@@ -82,6 +83,7 @@ export function buildSession(set, o = {}) {
     timerSec = 0,
     seed = randomSeed(),
     label = '',
+    askConfidence = true,
   } = o;
   const byId = indexById(set);
   const rng = mulberry32(seed);
@@ -99,7 +101,7 @@ export function buildSession(set, o = {}) {
     timerSec: mode === 'exam' ? Math.max(0, Math.round(timerSec || 0)) : 0,
     seed,
     label,
-    settings: { shuffleQuestions, shuffleOptions },
+    settings: { shuffleQuestions, shuffleOptions, askConfidence: askConfidence !== false },
     createdAt: Date.now(),
     items,
     current: 0,
@@ -151,6 +153,9 @@ export const CONFIDENCE_LEVELS = ['low', 'medium', 'high'];
 
 /** A valid confidence level, or null. */
 export const normalizeConfidence = (v) => (CONFIDENCE_LEVELS.includes(v) ? v : null);
+
+/** Does this session ask for confidence ratings? Older saves have no setting and default to yes. */
+export const asksConfidence = (session) => !(session && session.settings && session.settings.askConfidence === false);
 
 /** Can this item's confidence still change? Tutor: until the answer is submitted. Exam: until the exam is submitted. */
 export const canSetConfidence = (session, item) => !session.finished && (session.mode === 'exam' || item.chosen === null);

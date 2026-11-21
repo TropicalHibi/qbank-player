@@ -4,15 +4,21 @@
 // answers changeable until Submit; optional block countdown.
 // Both modes: options can be struck out (button, right-click, long-press, Shift+key);
 // strikes are stored as original indexes in `item.struck` and never affect scoring.
+// Confidence (optional, session.settings.askConfidence): a Low/Medium/High radio group
+// below the options; locking follows canSetConfidence() (tutor: on submit, exam: on submit).
 
-import { el, setChildren, showModal, announce, isDialogOpen, toast } from './dom.js';
+import { el, setChildren, showModal, announce, isDialogOpen, toast, nextId } from './dom.js';
 import { renderStem, renderImage, renderOptions, renderReveal, updateStrikes, rangeToOffsets, textOffset } from './render.js';
-import { indexById, answeredCount, toggleStrike, clearStrike, itemHighlights } from './session.js';
+import { indexById, answeredCount, toggleStrike, clearStrike, itemHighlights, asksConfidence, canSetConfidence, setConfidence, CONFIDENCE_LEVELS } from './session.js';
 import { formatClock, addRange, removeRangeAt, LETTERS } from './util.js';
 
 const TICK_MS = 500;
 const SAVE_EVERY_MS = 5000;
 const MAX_TICK_GAP_MS = 5000; // ignore gaps from sleep/suspend
+// Confidence shortcuts: Q / W / R (E is option E; A–H, F, Shift+letter are taken).
+const CONF_KEYS = { q: 'low', w: 'medium', r: 'high' };
+const CONF_KEY_OF = { low: 'Q', medium: 'W', high: 'R' };
+const CONF_LABEL = { low: 'Low', medium: 'Medium', high: 'High' };
 
 export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
   const byId = indexById(set);
@@ -20,6 +26,7 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
   const N = items.length;
   const exam = session.mode === 'exam';
   const timed = exam && session.timerSec > 0;
+  const askConf = asksConfidence(session);
 
   let destroyed = false;
   let paused = document.hidden;
@@ -100,6 +107,7 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
     '+letter/number, right-click or long-press strike out · ',
     el('kbd', { text: 'Enter' }),
     exam ? ' next/submit · ' : ' submit answer, then next · ',
+    askConf ? [el('kbd', { text: 'Q' }), el('kbd', { text: 'W' }), el('kbd', { text: 'R' }), ' confidence low/medium/high (again to clear) · '] : null,
     el('kbd', { text: 'F' }),
     ' flag · ',
     el('kbd', { text: '←' }),
@@ -132,7 +140,7 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
       });
     }
     hideHlButton();
-    setChildren(card, el('div', { class: 'q-head' }, heading, toolbar), renderStem(q, it), renderImage(q, idx + 1), options, feedback, ...(reveal ? renderReveal(q) : []));
+    setChildren(card, el('div', { class: 'q-head' }, heading, toolbar), renderStem(q, it), renderImage(q, idx + 1), options, askConf ? renderConfidence(it) : null, feedback, ...(reveal ? renderReveal(q) : []));
     clearHlBtn.disabled = !itemHighlights(it).length;
 
     flagBtn.setAttribute('aria-pressed', String(!!it.flagged));
@@ -156,6 +164,91 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
       heading.focus({ preventScroll: true });
       window.scrollTo(0, 0);
     }
+  }
+
+  /* ----- confidence ----- */
+  // Wrapper holds the visible label; the radiogroup itself only owns radios.
+  function renderConfidence(it) {
+    const locked = !canSetConfidence(session, it);
+    const labelId = nextId('conf-label');
+    const radios = CONFIDENCE_LEVELS.map((level) =>
+      el(
+        'button',
+        {
+          class: 'conf-opt',
+          type: 'button',
+          dataset: { level },
+          attrs: { role: 'radio', 'aria-checked': 'false', 'aria-disabled': locked ? 'true' : null, 'aria-keyshortcuts': CONF_KEY_OF[level], tabindex: '-1' },
+          on: { click: () => rateConfidence(items[idx].confidence === level ? null : level, level) },
+        },
+        el('span', { class: 'conf-mark', attrs: { 'aria-hidden': 'true' } }),
+        CONF_LABEL[level]
+      )
+    );
+    const group = el(
+      'div',
+      {
+        class: 'conf-group',
+        attrs: { role: 'radiogroup', 'aria-labelledby': labelId, 'aria-readonly': locked ? 'true' : null },
+        on: { keydown: onConfKey },
+      },
+      radios
+    );
+    const wrap = el(
+      'div',
+      { class: ['confidence', locked && 'is-locked'] },
+      el('span', { class: 'conf-label', id: labelId, text: 'Confidence:' }),
+      group,
+      locked && !it.confidence ? el('span', { class: 'conf-note', text: 'Not rated' }) : null
+    );
+    syncConfidence(wrap, it);
+    return wrap;
+  }
+
+  /** Reflect item.confidence in the control: aria-checked, check mark, roving tabindex. */
+  function syncConfidence(wrap, it, focusLevel = null) {
+    const radios = [...wrap.querySelectorAll('.conf-opt')];
+    const active = radios.find((r) => r.dataset.level === it.confidence) || radios[0];
+    for (const r of radios) {
+      const on = r.dataset.level === it.confidence;
+      r.setAttribute('aria-checked', String(on));
+      r.querySelector('.conf-mark').textContent = on ? '✓' : '';
+      r.tabIndex = r === active ? 0 : -1;
+    }
+    if (focusLevel) radios.find((r) => r.dataset.level === focusLevel)?.focus({ preventScroll: true });
+  }
+
+  function rateConfidence(value, focusLevel = null) {
+    if (!askConf) return;
+    const it = items[idx];
+    if (!canSetConfidence(session, it)) {
+      if (focusLevel === null) announce('Confidence is locked once the answer is submitted.');
+      return;
+    }
+    if (!setConfidence(session, idx, value)) return;
+    const wrap = card.querySelector('.confidence');
+    if (wrap) syncConfidence(wrap, it, focusLevel);
+    announce(value ? `Confidence: ${value}` : 'Confidence cleared');
+    save();
+  }
+
+  // Arrow keys move (and select, like native radios) within the group; they must not
+  // reach the document handler, where they would change question.
+  function onConfKey(e) {
+    const keys = ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'];
+    if (!keys.includes(e.key) || e.altKey || e.ctrlKey || e.metaKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const radios = [...e.currentTarget.querySelectorAll('.conf-opt')];
+    const cur = radios.indexOf(document.activeElement);
+    const n = radios.length;
+    let i;
+    if (e.key === 'Home') i = 0;
+    else if (e.key === 'End') i = n - 1;
+    else i = (Math.max(cur, 0) + (e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1) + n) % n;
+    const level = radios[i].dataset.level;
+    if (canSetConfidence(session, items[idx])) rateConfidence(level, level);
+    else radios[i].focus({ preventScroll: true });
   }
 
   function renderNav() {
@@ -483,6 +576,12 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
     if (!e.shiftKey && (k === 'f' || k === 'F')) {
       e.preventDefault();
       toggleFlag();
+      return;
+    }
+    const lv = !e.shiftKey && askConf ? CONF_KEYS[k.toLowerCase()] : null;
+    if (lv) {
+      e.preventDefault();
+      rateConfidence(items[idx].confidence === lv ? null : lv);
       return;
     }
     let d = -1;

@@ -18,6 +18,7 @@ export function renderStart(root, { set, warnings, progress, lastResult, prefs, 
     timerSec: clampTimer(prefs.timerSec ?? DEFAULT_TIMER),
     shuffleQuestions: prefs.shuffleQuestions ?? true,
     shuffleOptions: prefs.shuffleOptions ?? true,
+    askConfidence: prefs.askConfidence ?? true,
     selected: new Set(tags.map((t) => t.tag)),
     missedOnly: false,
     count: 0,
@@ -158,6 +159,20 @@ export function renderStart(root, { set, warnings, progress, lastResult, prefs, 
     )
   );
 
+  /* ----- confidence ----- */
+  const confidenceField = el(
+    'fieldset',
+    {},
+    el('legend', { text: 'Confidence' }),
+    el(
+      'label',
+      { class: 'check-row' },
+      el('input', { type: 'checkbox', name: 'ask-confidence', checked: st.askConfidence, on: { change: (e) => (st.askConfidence = e.target.checked) } }),
+      'Ask for confidence'
+    ),
+    el('p', { class: 'hint', text: 'Rate each answer Low, Medium or High (optional). Ratings are saved with your results and never change your score.' })
+  );
+
   /* ----- tags ----- */
   const chipEls = tags.map((t) =>
     el(
@@ -261,6 +276,7 @@ export function renderStart(root, { set, warnings, progress, lastResult, prefs, 
             count: st.count,
             timerSec: st.mode === 'exam' && st.timed ? st.timerSec : 0,
             label: st.missedOnly ? 'Missed last session' : '',
+            askConfidence: st.askConfidence,
           };
           onStart(opts, {
             mode: st.mode,
@@ -268,6 +284,7 @@ export function renderStart(root, { set, warnings, progress, lastResult, prefs, 
             timerSec: st.timerSec,
             shuffleQuestions: st.shuffleQuestions,
             shuffleOptions: st.shuffleOptions,
+            askConfidence: st.askConfidence,
           });
         },
       },
@@ -275,6 +292,7 @@ export function renderStart(root, { set, warnings, progress, lastResult, prefs, 
     modeField,
     examField,
     shuffleField,
+    confidenceField,
     tagField,
     countField,
     el('div', { class: 'btn-row start-actions' }, startBtn, el('button', { class: 'btn btn-ghost', type: 'button', text: '← Load a different set', on: { click: onLibrary } }))

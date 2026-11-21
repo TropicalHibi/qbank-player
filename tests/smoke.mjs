@@ -349,6 +349,100 @@ try {
     log('touch long-press strikes without selecting');
   }
 
+  /* ---------- confidence rating ---------- */
+  {
+    const conf = (lv) => `.question-card .conf-opt[data-level="${lv}"]`;
+    const checked = () => page.$$eval('.question-card .conf-opt[aria-checked="true"]', (x) => x.map((b) => b.dataset.level));
+    await page.goto(site + '?set=sets/example.json');
+    await page.waitForSelector('#start-title');
+    assert.equal(await page.isChecked('input[name=ask-confidence]'), true, 'Ask for confidence defaults on');
+    await page.check('input[name=mode][value=tutor]');
+    await page.uncheck('input[name=ask-confidence]');
+    await page.click('button[type=submit]:has-text("Start")');
+    await page.waitForSelector('.question-card');
+    assert.equal(await page.$('.confidence, [role=radiogroup]'), null, 'no confidence control when "Ask for confidence" is off');
+    await page.keyboard.press('r');
+    assert.ok(!(await page.textContent('.kbd-help')).includes('confidence'), 'help omits confidence keys when off');
+    await page.click('button:has-text("Save & exit")');
+    await page.waitForSelector('#start-title');
+    assert.equal(await page.isChecked('input[name=ask-confidence]'), false, '"Ask for confidence" saved in prefs');
+    await page.check('input[name=ask-confidence]');
+    await page.click('button[type=submit]:has-text("Start")');
+    await page.waitForSelector('.question-card .confidence');
+    log('"Ask for confidence" off hides the control; the setting is remembered');
+
+    assert.equal(await page.getAttribute('.question-card .conf-group', 'role'), 'radiogroup');
+    assert.equal(await page.$$eval('.question-card .conf-opt[role=radio]', (x) => x.length), 3);
+    assert.deepEqual(await checked(), []);
+    assert.match(await page.textContent('.kbd-help'), /confidence/);
+    await page.click(conf('medium'));
+    assert.deepEqual(await checked(), ['medium']);
+    await page.waitForSelector('#sr-live:has-text("Confidence: medium")');
+    assert.equal(await page.textContent(`${conf('medium')} .conf-mark`), '✓', 'checked state is not color alone');
+    await page.click(conf('medium'));
+    assert.deepEqual(await checked(), [], 'clicking the active value clears it');
+    await page.keyboard.press('r');
+    assert.deepEqual(await checked(), ['high'], 'R rates high');
+    assert.deepEqual(await page.$$eval('.question-card .conf-opt', (x) => x.map((b) => b.tabIndex)), [-1, -1, 0], 'roving tabindex follows the checked value');
+    await page.focus(conf('high'));
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('ArrowLeft');
+    assert.deepEqual(await checked(), ['low'], 'arrow keys move the selection');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.level), 'low');
+    assert.match(await page.textContent('.question-card h2'), /^Question 1 of 5$/, 'arrows inside the group do not change question');
+    await page.keyboard.press('q');
+    assert.deepEqual(await checked(), [], 'pressing the active key again clears it');
+    await page.keyboard.press('w');
+    await page.keyboard.press('q');
+    assert.deepEqual(await checked(), ['low']);
+    assert.ok(!/confidence|low/i.test(await page.$$eval('.nav-cell', (x) => x.map((b) => b.getAttribute('aria-label') + b.textContent).join(' '))), 'navigator does not show confidence');
+    await a11y('quiz-confidence');
+    log('confidence: rate by click, Q/W/R and arrow keys; clicking again clears');
+
+    await page.reload();
+    await page.click('.resume-card button:has-text("Resume")');
+    await page.waitForSelector('.question-card .confidence');
+    assert.deepEqual(await checked(), ['low'], 'rating restored after refresh');
+    log('confidence rating survives refresh and resume');
+
+    await page.keyboard.press('a');
+    await page.click('button.submit-answer');
+    await page.waitForSelector('.feedback');
+    assert.ok(await page.$('.question-card .confidence.is-locked'), 'read-only after submit');
+    assert.equal(await page.getAttribute('.question-card .conf-group', 'aria-readonly'), 'true');
+    assert.deepEqual(await checked(), ['low'], 'read-only control shows the chosen value');
+    await page.keyboard.press('r');
+    await page.click(conf('high'), { force: true }); // aria-disabled: Playwright would otherwise wait
+    assert.deepEqual(await checked(), ['low'], 'tutor rating locked after submit');
+    await a11y('quiz-confidence-locked');
+    await page.click('.quiz-footer button:has-text("Next")');
+    await page.waitForSelector('.question-card h2:has-text("Question 2 of 5")');
+    await page.keyboard.press('b');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('.feedback');
+    assert.equal(await page.textContent('.question-card .conf-note'), 'Not rated', 'submitting without a rating is allowed');
+    log('tutor: rating locks on submit; unrated submit allowed');
+
+    await page.click('button:has-text("Save & exit")');
+    await page.waitForSelector('#start-title');
+    await page.check('input[name=mode][value=exam]');
+    await page.click('button[type=submit]:has-text("Start")');
+    await page.waitForSelector('.question-card .confidence');
+    await page.keyboard.press('1');
+    await page.keyboard.press('w');
+    await page.keyboard.press('ArrowRight');
+    await page.waitForSelector('.question-card h2:has-text("Question 2 of 5")');
+    await page.keyboard.press('ArrowLeft');
+    await page.waitForSelector('.question-card h2:has-text("Question 1 of 5")');
+    assert.deepEqual(await checked(), ['medium']);
+    await page.keyboard.press('r');
+    assert.deepEqual(await checked(), ['high'], 'exam: rating changes after answering');
+    await a11y('quiz-exam-confidence');
+    await page.click('button:has-text("Save & exit")');
+    await page.waitForSelector('#start-title');
+    log('exam: rating can change until the exam is submitted');
+  }
+
   /* ---------- paste: repaired + broken ---------- */
   await page.goto(site);
   const setText = fs.readFileSync(path.join(root, 'sets/example.json'), 'utf8');

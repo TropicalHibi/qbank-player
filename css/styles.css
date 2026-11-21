@@ -1143,6 +1143,72 @@ kbd {
   background: var(--surface);
 }
 
+/* ---------- quiz: confidence rating (#25) ---------- */
+.confidence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+  margin-top: 1rem;
+}
+.conf-label {
+  font-weight: 600;
+}
+.conf-group {
+  display: inline-flex;
+  max-width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.conf-opt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-height: var(--tap);
+  padding: 0.4rem 0.8rem;
+  white-space: nowrap;
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.conf-opt:last-child {
+  border-right: 0;
+}
+.conf-opt:hover {
+  background: var(--surface-2);
+}
+.conf-opt[aria-checked='true'] {
+  background: var(--accent-soft);
+  font-weight: 700;
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+.conf-opt:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: -3px;
+}
+.conf-mark {
+  display: inline-block;
+  width: 1ch;
+  color: var(--accent);
+}
+.confidence.is-locked .conf-opt {
+  cursor: default;
+}
+.confidence.is-locked .conf-opt:not([aria-checked='true']) {
+  color: var(--muted);
+  background: var(--surface);
+}
+.conf-note {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 /* ---------- results ---------- */
 .stats {
   display: grid;

@@ -353,6 +353,7 @@ function showResults() {
         timerSec: prev.timerSec,
         shuffleQuestions: true,
         shuffleOptions: prev.settings ? prev.settings.shuffleOptions : true,
+        askConfidence: prev.settings ? prev.settings.askConfidence !== false : true,
         ids,
         label,
       })
