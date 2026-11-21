@@ -562,6 +562,101 @@ try {
   assert.ok(bk.badErrors > 0);
   log('backup: exportAll → importAll replace round-trips; merge adds missing; invalid backup rejected');
 
+  /* ---------- Library UI: back up, clear site data, restore, resume (#28) ---------- */
+  const clearSiteData = () =>
+    page.evaluate(() => {
+      localStorage.clear();
+      indexedDB.deleteDatabase('qbank-player'); // completes once this page's connection closes on reload
+    });
+  await clearSiteData();
+  await page.goto(site + '?set=sets/example.json');
+  await page.waitForSelector('#start-title');
+  await page.check('input[name=mode][value=exam]');
+  await page.click('button[type=submit]:has-text("Start")');
+  await page.waitForSelector('.question-card');
+  await page.keyboard.press('a');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('b');
+  await page.keyboard.press('ArrowRight');
+  await page.waitForSelector('.question-card h2:has-text("Question 3 of 5")');
+  await page.click('#theme-toggle'); // a non-default pref to round-trip
+  const themeBefore = await page.getAttribute('html', 'data-theme');
+  await page.goto(site);
+  await page.waitForSelector('#recent-list .set-item button:has-text("Resume")');
+  const [bdl] = await Promise.all([page.waitForEvent('download'), page.click('#backup-btn')]);
+  assert.match(bdl.suggestedFilename(), /^qbank-player-backup-\d{4}-\d{2}-\d{2}-\d{4}\.json$/);
+  const backupPath = await bdl.path();
+  const backupJson = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
+  assert.equal(backupJson.app, 'qbank-player');
+  assert.equal(backupJson.sets.length, 1);
+  assert.equal(Object.keys(backupJson.localStorage).filter((k) => k.startsWith('qbp:progress:')).length, 1);
+  await page.waitForSelector('#toast.show:has-text("Backup downloaded: 1 set, 1 saved session.")');
+  log(`Back up downloads ${bdl.suggestedFilename()} and reports 1 set, 1 saved session`);
+
+  await clearSiteData();
+  await page.reload();
+  await page.waitForSelector('#bundled-list a.set-title');
+  assert.equal(await page.isHidden('#recent-section'), true, 'site data cleared');
+  await page.setInputFiles('#restore-input', backupPath);
+  await page.waitForSelector('dialog.modal[open]');
+  const dlgText = await page.textContent('dialog.modal');
+  assert.match(dlgText, /Restore backup\?/);
+  assert.match(dlgText, /Question sets\s*1/);
+  assert.match(dlgText, /Saved sessions\s*1/);
+  assert.match(dlgText, /Replace deletes all current progress/);
+  assert.deepEqual(await page.$$eval('dialog.modal .modal-actions button', (b) => b.map((x) => x.textContent)), ['Cancel', 'Replace current data', 'Merge with current data']);
+  await a11y('restore-dialog');
+  await page.click('dialog.modal button:has-text("Replace current data")');
+  await page.waitForSelector('dialog.modal', { state: 'detached' });
+  await page.waitForSelector('#toast.show:has-text("Replaced data: restored 1 set, 1 saved session")');
+  assert.equal(await page.getAttribute('html', 'data-theme'), themeBefore, 'restored theme applied');
+  await page.click('#recent-list .set-item button:has-text("Resume")');
+  await page.waitForSelector('.question-card h2:has-text("Question 3 of 5")');
+  assert.match(await page.textContent('.navigator summary'), /2\/5 answered/);
+  log('clear site data → Restore… (replace) → Resume continues at question 3 of 5');
+
+  await page.click('button:has-text("Save & exit")');
+  await page.waitForSelector('.resume-card');
+  await page.goto(site);
+  await page.waitForSelector('#recent-list .set-item');
+  await page.setInputFiles('#file-input', backupPath); // the regular "Choose file…" detects a backup too
+  await page.waitForSelector('dialog.modal[open]:has-text("Restore backup?")');
+  await page.click('dialog.modal button:has-text("Merge with current data")');
+  await page.waitForSelector('#toast.show:has-text("Merged: restored 0 sets, 0 saved sessions")');
+  assert.match(await page.textContent('#toast'), /skipped \(kept your current copy\)/);
+  assert.equal(await page.isHidden('#load-errors'), true);
+  log('a backup chosen with "Choose file…" opens the restore dialog; merge reports skipped items');
+
+  await page.setInputFiles('#restore-input', { name: 'future.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ ...backupJson, backupVersion: 2 })) });
+  await page.waitForSelector('#load-errors:not([hidden]) li:has-text("backupVersion: unsupported version 2 (expected 1).")');
+  assert.match(await page.textContent('#load-errors h2'), /Couldn't restore "future.json"/);
+  assert.equal(await page.$('dialog.modal'), null, 'no dialog for an invalid backup');
+  await page.setInputFiles('#restore-input', path.join(root, 'sets/example.json'));
+  await page.waitForSelector('#load-errors li:has-text("app: missing")');
+  await page.setInputFiles('#restore-input', { name: 'broken.json', mimeType: 'application/json', buffer: Buffer.from('{"app": "qbank-player",') });
+  await page.waitForSelector('#load-errors:has-text("Couldn\'t restore \\"broken.json\\"")');
+  log('invalid backup, a question set, and broken JSON in Restore… show validation messages');
+
+  {
+    const b = await browser.newContext();
+    await b.addInitScript(() => {
+      Object.defineProperty(window, 'localStorage', {
+        get() {
+          throw new DOMException('blocked', 'SecurityError');
+        },
+      });
+    });
+    const bp = await b.newPage();
+    bp.on('pageerror', (e) => problems.push(`pageerror (blocked storage): ${e.message}`));
+    await bp.goto(site);
+    await bp.waitForSelector('#bundled-list a.set-title');
+    assert.equal(await bp.isDisabled('#backup-btn'), true);
+    assert.equal(await bp.isDisabled('#restore-btn'), true);
+    assert.equal(await bp.isVisible('#data-blocked'), true);
+    await b.close();
+    log('with storage blocked, Back up and Restore… are disabled with an explanation');
+  }
+
   for (const [rule, where] of a11yWarnings) console.warn(`  a11y warning: ${rule} in ${[...where].join(', ')}`);
   assert.deepEqual(a11yFailures, [], 'no serious/critical accessibility violations:\n' + a11yFailures.join('\n'));
   log('accessibility scans: no serious/critical violations (light + dark)');

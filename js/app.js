@@ -1,8 +1,9 @@
 // Entry point for index.html: routing between Library → Start → Quiz → Results,
 // app state, and the Library view (file/paste/URL loading, bundled + recent sets).
 
-import { $, el, setChildren, showModal, toast } from './dom.js';
-import { loadSetFromText, loadSetFromFile, loadSetFromUrl } from './loader.js';
+import { $, el, setChildren, showModal, toast, downloadText } from './dom.js';
+import { loadSetFromText, loadSetFromUrl, parseJsonText } from './loader.js';
+import { backupFilename, looksLikeBackup, summarizeBackup, validateBackup, pluralize } from './backup.js';
 import { setKey, isSessionValid, normalizeSession, buildSession, scoreSession } from './session.js';
 import * as store from './storage.js';
 import { relativeTime } from './util.js';
@@ -69,12 +70,12 @@ function getResumable() {
 
 const MAX_SHOWN_ERRORS = 25;
 
-function showLoadErrors(r, sourceLabel) {
+function showLoadErrors(r, sourceLabel, heading = null) {
   const box = $('#load-errors');
   const errs = r.errors || [];
   setChildren(
     box,
-    el('h2', { text: `Couldn't load ${sourceLabel ? `"${sourceLabel}"` : 'this set'}` }),
+    el('h2', { text: heading || `Couldn't load ${sourceLabel ? `"${sourceLabel}"` : 'this set'}` }),
     el(
       'ul',
       {},
@@ -103,7 +104,113 @@ function showLibrary() {
   show('library');
   renderRecents();
   renderBundled();
+  renderDataSection();
   focusHeading(views.library);
+}
+
+/* ---------- your data: back up / restore ---------- */
+
+function renderDataSection() {
+  const ok = store.storageAvailable();
+  $('#backup-btn').disabled = !ok;
+  $('#restore-btn').disabled = !ok;
+  $('#data-blocked').hidden = ok;
+  for (const id of ['#backup-btn', '#restore-btn']) $(id).setAttribute('aria-describedby', ok ? 'data-note' : 'data-note data-blocked');
+}
+
+async function backUp() {
+  const backup = await store.exportAll();
+  const s = summarizeBackup(backup);
+  downloadText(backupFilename(), JSON.stringify(backup, null, 2));
+  toast(`Backup downloaded: ${pluralize(s.sets, 'set')}, ${pluralize(s.sessions, 'saved session')}.`);
+}
+
+/** Text of a file, or null after showing why it couldn't be read. */
+async function readFile(file) {
+  try {
+    return await file.text();
+  } catch (e) {
+    if (state.view !== 'library') showLibrary();
+    showLoadErrors({ errors: [`Could not read "${file.name}": ${e.message}`] }, file.name);
+    return null;
+  }
+}
+
+/** If `text` parses to something claiming to be a backup, return it (else null). */
+function asBackup(text) {
+  const p = parseJsonText(text);
+  return p.errors.length === 0 && looksLikeBackup(p.data) ? p.data : null;
+}
+
+/** After a restore, apply the restored theme pref (theme-init.js only reads it at page load). */
+function applySavedTheme() {
+  const t = store.getJSON('theme');
+  const root = document.documentElement;
+  if (t === 'light' || t === 'dark') root.setAttribute('data-theme', t);
+  else root.removeAttribute('data-theme');
+  const btn = $('#theme-toggle');
+  if (!btn) return;
+  const dark = (root.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')) === 'dark';
+  const text = dark ? 'Switch to light theme' : 'Switch to dark theme';
+  btn.textContent = dark ? '☀︎' : '☾';
+  btn.setAttribute('aria-label', text);
+  btn.title = text;
+}
+
+const restoreHeading =(label) => `Couldn't restore ${label ? `"${label}"` : 'this backup'}`;
+
+/** Restore flow for a parsed backup: validate, summarize, ask merge/replace, import, re-render. */
+async function restoreFlow(backup, sourceLabel) {
+  if (state.view !== 'library') {
+    if (location.search) history.pushState(null, '', location.pathname);
+    showLibrary();
+  }
+  clearLoadErrors();
+  const v = validateBackup(backup);
+  if (!v.valid) {
+    showLoadErrors({ errors: v.errors }, sourceLabel, restoreHeading(sourceLabel));
+    return;
+  }
+  if (!store.storageAvailable()) {
+    showLoadErrors({ errors: ['Browser storage is blocked or disabled, so nothing can be restored.'] }, sourceLabel, restoreHeading(sourceLabel));
+    return;
+  }
+  const s = summarizeBackup(backup);
+  const facts = [
+    ['Created', s.createdAt ? s.createdAt.toLocaleString() : 'unknown date'],
+    ['Question sets', String(s.sets)],
+    ['Saved sessions', String(s.sessions)],
+    ['Recent sets', String(s.recents)],
+  ];
+  const mode = await showModal({
+    title: 'Restore backup?',
+    body: [
+      el('p', { text: sourceLabel ? `From "${sourceLabel}":` : 'This backup contains:' }),
+      el('dl', { class: 'backup-facts' }, facts.map(([k, val]) => [el('dt', { text: k }), el('dd', { text: val })])),
+      el('p', { text: 'Merge keeps your current data and adds what is missing; the newer of two saved sessions for the same set wins.' }),
+      el('p', { class: 'backup-replace-warn small', text: 'Replace deletes all current progress, results, recent sets and preferences in this browser first. This cannot be undone.' }),
+    ],
+    actions: [
+      { label: 'Cancel', value: null },
+      { label: 'Replace current data', value: 'replace', variant: 'danger' },
+      { label: 'Merge with current data', value: 'merge', variant: 'primary' },
+    ],
+    dismissValue: null,
+  });
+  if (!mode) return;
+  const r = await store.importAll(backup, { mode });
+  applySavedTheme();
+  showLibrary(); // re-renders recents, resume buttons and this section
+  if (r.errors.length && !r.restored.keys.length && !r.restored.sets.length) {
+    showLoadErrors({ errors: r.errors }, sourceLabel, restoreHeading(sourceLabel));
+    return;
+  }
+  const restoredSessions = r.restored.keys.filter((k) => k.startsWith('qbp:progress:')).length;
+  const parts = [`${mode === 'replace' ? 'Replaced data' : 'Merged'}: restored ${pluralize(r.restored.sets.length, 'set')}, ${pluralize(restoredSessions, 'saved session')}`];
+  if (r.skipped.length) parts.push(`${pluralize(r.skipped.length, 'item')} skipped (${mode === 'merge' ? 'kept your current copy' : 'not restorable'})`);
+  if (r.errors.length) parts.push(`${pluralize(r.errors.length, 'problem')}`);
+  toast(parts.join('; ') + '.');
+  if (r.errors.length) showLoadErrors({ errors: r.errors }, sourceLabel, 'Some data could not be restored');
 }
 
 function renderRecents() {
@@ -261,7 +368,25 @@ async function handleResult(r, { url = null, sourceLabel = '', resume = false } 
 async function loadFile(file) {
   if (!file) return;
   showLoading();
-  await handleResult(await loadSetFromFile(file), { sourceLabel: file.name });
+  const text = await readFile(file);
+  if (text == null) return;
+  const backup = asBackup(text);
+  if (backup) return restoreFlow(backup, file.name);
+  await handleResult(loadSetFromText(text), { sourceLabel: file.name });
+}
+
+/** "Restore…" picker: anything chosen here is treated as a backup (wrong files get validateBackup() messages). */
+async function restoreFile(file) {
+  if (!file) return;
+  const text = await readFile(file);
+  if (text == null) return;
+  const p = parseJsonText(text);
+  if (p.errors.length) {
+    clearLoadErrors();
+    showLoadErrors(p, file.name, restoreHeading(file.name));
+    return;
+  }
+  await restoreFlow(p.data, file.name);
 }
 
 async function loadUrl(url, resume) {
@@ -399,9 +524,22 @@ function wireLibrary() {
   $('#paste-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const text = $('#paste-input').value;
+    const backup = asBackup(text);
+    if (backup) {
+      $('#paste-input').value = '';
+      await restoreFlow(backup, 'pasted backup');
+      return;
+    }
     showLoading();
     const ok = await handleResult(loadSetFromText(text), { sourceLabel: 'pasted JSON' });
     if (ok) $('#paste-input').value = '';
+  });
+  $('#backup-btn').addEventListener('click', backUp);
+  $('#restore-btn').addEventListener('click', () => $('#restore-input').click());
+  $('#restore-input').addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    restoreFile(f);
   });
 }
 
