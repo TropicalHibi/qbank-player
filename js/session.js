@@ -7,7 +7,7 @@
 // `pending` (tutor mode) is an original index the user has picked but not yet submitted.
 // It never counts as an answer: only `chosen` is used for scoring and progress.
 
-import { shuffle, mulberry32, randomSeed, hashString, slug, fileTimestamp, truncate, stripMarkdown, formatDuration, LETTERS } from './util.js';
+import { mergeRanges, shuffle, mulberry32, randomSeed, hashString, slug, fileTimestamp, truncate, stripMarkdown, formatDuration, LETTERS } from './util.js';
 
 export const UNTAGGED = '(untagged)';
 
@@ -87,7 +87,7 @@ export function buildSession(set, o = {}) {
   if (count && count > 0 && count < chosen.length) chosen = chosen.slice(0, count);
   const items = chosen.map((id) => {
     const base = byId.get(id).options.map((_, i) => i);
-    return { id, order: shuffleOptions ? shuffle(base, rng) : base, chosen: null, pending: null, timeMs: 0, flagged: false, struck: [] };
+    return { id, order: shuffleOptions ? shuffle(base, rng) : base, chosen: null, pending: null, timeMs: 0, flagged: false, struck: [], highlights: [] };
   });
   return {
     v: 1,
@@ -120,11 +120,15 @@ export function isSessionValid(set, s) {
   });
 }
 
+/** Highlight ranges for an item; older saved sessions have none, and garbage is dropped. */
+export const itemHighlights = (item) => mergeRanges(item && item.highlights);
+
 /**
  * Bring a stored session (already checked with isSessionValid) up to the current shape, in place.
  * Older saves have no `pending`; a missing or out-of-range pending becomes null, and a
  * pending choice is dropped once the question has been answered.
  * Older saves have no `struck`; it becomes [], and malformed entries are dropped.
+ * Older saves have no `highlights`; they become [], and ranges are validated and merged.
  */
 export function normalizeSession(set, s) {
   const byId = indexById(set);
@@ -133,6 +137,7 @@ export function normalizeSession(set, s) {
     const p = it.pending;
     it.pending = it.chosen === null && Number.isInteger(p) && p >= 0 && p < n ? p : null;
     it.struck = Array.isArray(it.struck) ? [...new Set(it.struck.filter((v) => Number.isInteger(v) && v >= 0 && v < n))].sort((a, b) => a - b) : [];
+    it.highlights = mergeRanges(it.highlights);
   }
   return s;
 }

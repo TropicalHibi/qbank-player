@@ -186,6 +186,59 @@ export function renderMarkdownLite(src) {
   return out.join('');
 }
 
+/* ---------- highlight ranges ---------- */
+
+/**
+ * Normalize highlight ranges ({start, end} character offsets into a container's text
+ * content): drop invalid entries, sort, and merge overlapping or touching ranges.
+ */
+export function mergeRanges(ranges) {
+  const valid = (Array.isArray(ranges) ? ranges : [])
+    .filter((r) => r && Number.isInteger(r.start) && Number.isInteger(r.end) && r.start >= 0 && r.end > r.start)
+    .map((r) => ({ start: r.start, end: r.end }))
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+  const out = [];
+  for (const r of valid) {
+    const last = out[out.length - 1];
+    if (last && r.start <= last.end) last.end = Math.max(last.end, r.end);
+    else out.push(r);
+  }
+  return out;
+}
+
+/** Add a range and re-merge. */
+export const addRange = (ranges, r) => mergeRanges([...(Array.isArray(ranges) ? ranges : []), r]);
+
+/** Remove the (merged) range that covers character `offset`. */
+export function removeRangeAt(ranges, offset) {
+  return mergeRanges(ranges).filter((r) => !(offset >= r.start && offset < r.end));
+}
+
+/**
+ * Map ranges onto a sequence of text nodes, given only their lengths (in document order).
+ * Returns [{node, start, end, range}] where start/end are offsets local to text node `node`
+ * and `range` is the index of the merged range the piece belongs to. A range that crosses
+ * element boundaries (bold, italic, table cells) yields one piece per text node.
+ */
+export function rangeSegments(lengths, ranges) {
+  const merged = mergeRanges(ranges);
+  const segs = [];
+  let pos = 0;
+  let first = 0;
+  for (let n = 0; n < lengths.length; n++) {
+    const nStart = pos;
+    const nEnd = pos + lengths[n];
+    pos = nEnd;
+    for (let i = first; i < merged.length && merged[i].start < nEnd; i++) {
+      const s = Math.max(merged[i].start, nStart);
+      const e = Math.min(merged[i].end, nEnd);
+      if (e > s) segs.push({ node: n, start: s - nStart, end: e - nStart, range: i });
+    }
+    while (first < merged.length && merged[first].end <= nEnd) first++;
+  }
+  return segs;
+}
+
 /* ---------- time ---------- */
 
 const pad = (n, w = 2) => String(n).padStart(w, '0');

@@ -6,9 +6,9 @@
 // strikes are stored as original indexes in `item.struck` and never affect scoring.
 
 import { el, setChildren, showModal, announce, isDialogOpen, toast } from './dom.js';
-import { renderStem, renderImage, renderOptions, renderReveal, updateStrikes } from './render.js';
-import { indexById, answeredCount, toggleStrike, clearStrike } from './session.js';
-import { formatClock, LETTERS } from './util.js';
+import { renderStem, renderImage, renderOptions, renderReveal, updateStrikes, rangeToOffsets, textOffset } from './render.js';
+import { indexById, answeredCount, toggleStrike, clearStrike, itemHighlights } from './session.js';
+import { formatClock, addRange, removeRangeAt, LETTERS } from './util.js';
 
 const TICK_MS = 500;
 const SAVE_EVERY_MS = 5000;
@@ -57,7 +57,25 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
   const navSummary = el('summary');
   const navGrid = el('div', { class: 'nav-grid', attrs: { role: 'group', 'aria-label': 'Question navigator' } });
   const nav = el('details', { class: 'navigator', open: N <= 40 }, navSummary, navGrid);
-  const card = el('article', { class: 'question-card', attrs: { 'aria-live': 'off' } });
+  const card = el('article', { class: 'question-card', attrs: { 'aria-live': 'off' }, on: { click: onCardClick } });
+  const clearHlBtn = el('button', { class: 'btn btn-sm btn-ghost', type: 'button', text: 'Clear highlights', on: { click: clearHighlights } });
+  const toolbar = el('div', { class: 'q-toolbar', attrs: { role: 'toolbar', 'aria-label': 'Question tools' } }, clearHlBtn);
+  // Floating "Highlight" button shown next to a text selection in the stem. Lives on <body>
+  // so it can be positioned in page coordinates; removed in destroy().
+  const hlBtn = el('button', {
+    class: 'btn btn-sm btn-primary hl-float',
+    type: 'button',
+    text: 'Highlight',
+    hidden: true,
+    on: {
+      // Keep the selection alive while the button is pressed (mouse and touch).
+      pointerdown: (e) => e.preventDefault(),
+      mousedown: (e) => e.preventDefault(),
+      click: addHighlight,
+    },
+  });
+  document.body.append(hlBtn);
+  let pendingHl = null;
   const feedbackLive = el('div', { class: 'sr-only', attrs: { 'aria-live': 'assertive', 'aria-atomic': 'true' } });
   const prevBtn = el('button', { class: 'btn', type: 'button', text: '← Previous', on: { click: () => go(idx - 1) } });
   const flagBtn = el('button', { class: 'btn flag-btn', type: 'button', on: { click: toggleFlag } });
@@ -88,7 +106,7 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
     el('kbd', { text: '→' }),
     ' move · ',
     el('kbd', { text: 'Esc' }),
-    ' close'
+    ' close · select text in the question to highlight it, click a highlight to remove it'
   );
   root.replaceChildren(bar, progress, nav, card, feedbackLive, footer, help);
 
@@ -113,7 +131,9 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
         text: ok ? '✓ Correct' : `✕ Incorrect. The correct answer is ${LETTERS[it.order.indexOf(q.answer)]}.`,
       });
     }
-    setChildren(card, heading, renderStem(q), renderImage(q, idx + 1), options, feedback, ...(reveal ? renderReveal(q) : []));
+    hideHlButton();
+    setChildren(card, el('div', { class: 'q-head' }, heading, toolbar), renderStem(q, it), renderImage(q, idx + 1), options, feedback, ...(reveal ? renderReveal(q) : []));
+    clearHlBtn.disabled = !itemHighlights(it).length;
 
     flagBtn.setAttribute('aria-pressed', String(!!it.flagged));
     flagBtn.textContent = it.flagged ? '⚑ Flagged' : '⚐ Flag';
@@ -301,6 +321,74 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
     save();
   }
 
+  /* ----- highlights ----- */
+  const stemEl = () => card.querySelector('.stem');
+
+  function refreshStem() {
+    const it = items[idx];
+    const old = stemEl();
+    if (old) old.replaceWith(renderStem(byId.get(it.id), it));
+    clearHlBtn.disabled = !itemHighlights(it).length;
+  }
+
+  function hideHlButton() {
+    hlBtn.hidden = true;
+    pendingHl = null;
+  }
+
+  function onSelectionChange() {
+    if (destroyed) return;
+    const sel = document.getSelection();
+    const stem = stemEl();
+    const range = sel && sel.rangeCount && !sel.isCollapsed ? sel.getRangeAt(0) : null;
+    const hit = !root.hidden && stem && range && sel.toString().trim() ? rangeToOffsets(stem, range) : null;
+    if (!hit) {
+      hideHlButton();
+      return;
+    }
+    pendingHl = { start: hit.start, end: hit.end };
+    // Below the selection, so it doesn't collide with the native touch selection menu above it.
+    hlBtn.hidden = false;
+    const w = hlBtn.offsetWidth;
+    const vw = document.documentElement.clientWidth;
+    const left = Math.min(Math.max(8, hit.rect.left + hit.rect.width / 2 - w / 2), vw - w - 8);
+    hlBtn.style.left = `${left + window.scrollX}px`;
+    hlBtn.style.top = `${hit.rect.bottom + window.scrollY + 8}px`;
+  }
+
+  function addHighlight() {
+    if (!pendingHl) return;
+    const it = items[idx];
+    it.highlights = addRange(itemHighlights(it), pendingHl);
+    document.getSelection()?.removeAllRanges();
+    hideHlButton();
+    refreshStem();
+    announce('Highlight added.');
+    save();
+  }
+
+  function onCardClick(e) {
+    const mark = e.target.closest && e.target.closest('.stem mark.hl');
+    if (!mark) return;
+    const sel = document.getSelection();
+    if (sel && !sel.isCollapsed && sel.toString().trim()) return; // finishing a drag, not a click
+    const it = items[idx];
+    it.highlights = removeRangeAt(itemHighlights(it), textOffset(stemEl(), mark, 0));
+    refreshStem();
+    announce('Highlight removed.');
+    save();
+  }
+
+  function clearHighlights() {
+    const it = items[idx];
+    if (!itemHighlights(it).length) return;
+    it.highlights = [];
+    hideHlButton();
+    refreshStem();
+    announce('Highlights cleared.');
+    save();
+  }
+
   function toggleFlag() {
     const it = items[idx];
     it.flagged = !it.flagged;
@@ -431,6 +519,8 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
   }
 
   document.addEventListener('keydown', onKey);
+  document.addEventListener('selectionchange', onSelectionChange);
+  window.addEventListener('resize', onSelectionChange);
   document.addEventListener('visibilitychange', onVisibility);
   window.addEventListener('pagehide', onPageHide);
   const timer = setInterval(tick, TICK_MS);
@@ -444,6 +534,9 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
       destroyed = true;
       clearInterval(timer);
       document.removeEventListener('keydown', onKey);
+      document.removeEventListener('selectionchange', onSelectionChange);
+      window.removeEventListener('resize', onSelectionChange);
+      hlBtn.remove();
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('pagehide', onPageHide);
     },

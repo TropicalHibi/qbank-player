@@ -1,15 +1,79 @@
 // Shared question rendering for the quiz and the results review.
 
 import { el, openLightbox } from './dom.js';
-import { renderMarkdownLite, isSafeImageUrl, LETTERS } from './util.js';
-import { questionTags, isStruck } from './session.js';
+import { renderMarkdownLite, isSafeImageUrl, rangeSegments, LETTERS } from './util.js';
+import { questionTags, isStruck, itemHighlights } from './session.js';
 
 const LONG_PRESS_MS = 500;
 const LONG_PRESS_SLOP_PX = 10;
 const STRUCK_NOTE = ' (struck out)';
 
-export function renderStem(q) {
-  return el('div', { class: 'stem prose', html: renderMarkdownLite(q.stem) });
+/** Stem with the item's saved highlights (if any) reapplied after the md-lite render. */
+export function renderStem(q, item) {
+  const stem = el('div', { class: 'stem prose', html: renderMarkdownLite(q.stem) });
+  if (item) applyHighlights(stem, itemHighlights(item));
+  return stem;
+}
+
+/* ---------- highlights ---------- */
+
+// Text nodes directly inside these are formatting whitespace; wrapping them would break the table.
+const NO_MARK_PARENTS = new Set(['TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR']);
+
+function textNodes(container) {
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n);
+  return nodes;
+}
+
+/**
+ * Wrap the given character ranges of `container`'s text content in <mark class="hl">,
+ * one mark per text-node piece, by splitting text nodes (DOM APIs only, no innerHTML).
+ */
+export function applyHighlights(container, ranges) {
+  const nodes = textNodes(container);
+  const segs = rangeSegments(nodes.map((n) => n.data.length), ranges);
+  // Work backwards so splitting a node never shifts offsets of pieces still to be wrapped.
+  for (let i = segs.length - 1; i >= 0; i--) {
+    const { node, start, end, range } = segs[i];
+    let t = nodes[node];
+    if (!t.parentNode || NO_MARK_PARENTS.has(t.parentNode.nodeName)) continue;
+    if (end < t.data.length) t.splitText(end);
+    if (start > 0) t = t.splitText(start);
+    const mark = document.createElement('mark');
+    mark.className = 'hl';
+    mark.dataset.hl = String(range);
+    t.replaceWith(mark);
+    mark.append(t);
+  }
+}
+
+/** Character offset of a DOM boundary point within `container`'s text content. */
+export function textOffset(container, node, offset) {
+  const r = document.createRange();
+  r.setStart(container, 0);
+  r.setEnd(node, offset);
+  return r.toString().length;
+}
+
+/** The part of a DOM Range that falls inside `container`, as {start, end} text offsets (or null). */
+export function rangeToOffsets(container, range) {
+  if (!range || range.collapsed || !range.intersectsNode(container)) return null;
+  const full = document.createRange();
+  full.selectNodeContents(container);
+  const r = range.cloneRange();
+  if (r.compareBoundaryPoints(Range.START_TO_START, full) < 0) r.setStart(full.startContainer, full.startOffset);
+  if (r.compareBoundaryPoints(Range.END_TO_END, full) > 0) r.setEnd(full.endContainer, full.endOffset);
+  const start = textOffset(container, r.startContainer, r.startOffset);
+  const end = start + r.toString().length;
+  return end > start ? { start, end, rect: r.getBoundingClientRect() } : null;
+}
+
+/** True when the user has a non-empty text selection touching `node` (a drag, not a click). */
+function selectionTouches(node) {
+  const sel = document.getSelection();
+  return !!(sel && !sel.isCollapsed && sel.rangeCount && sel.getRangeAt(0).intersectsNode(node) && sel.toString().trim());
 }
 
 export function renderImage(q, number) {
@@ -143,8 +207,10 @@ export function renderOptions(q, item, { reveal, interactive, onSelect, onStrike
             dataset: { display: String(d) },
             attrs: { 'aria-pressed': String(isChosen || isPending), 'aria-label': null },
             on: {
-              click: () => {
+              click: (e) => {
                 if (gestures && gestures.consumeClick()) return;
+                // Selecting option text with mouse or touch must not pick the option.
+                if (e.detail && selectionTouches(e.currentTarget)) return;
                 if (onSelect) onSelect(orig);
               },
             },
@@ -234,7 +300,7 @@ export function renderReviewBody(q, item, number) {
   return el(
     'div',
     { class: 'review-body' },
-    renderStem(q),
+    renderStem(q, item),
     renderImage(q, number),
     item.chosen === null ? el('p', { class: 'unanswered-note', text: 'You did not answer this question.' }) : null,
     renderOptions(q, item, { reveal: true, interactive: false }),

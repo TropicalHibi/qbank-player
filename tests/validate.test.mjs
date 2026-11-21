@@ -6,8 +6,8 @@ import { fileURLToPath } from 'node:url';
 
 import { validateSet } from '../js/validate.js';
 import { extractJsonText, repairJson, parseJsonText, loadSetFromText } from '../js/loader.js';
-import { shuffle, mulberry32, slug, hashString, renderMarkdownLite, isSafeImageUrl, fileTimestamp, stripMarkdown } from '../js/util.js';
-import { buildSession, scoreSession, buildExport, resultsFilename, buildClaudeSummary, setKey, poolIds, collectTags, isSessionValid, normalizeSession, answeredCount, toggleStrike, clearStrike, isStruck, UNTAGGED } from '../js/session.js';
+import { shuffle, mulberry32, slug, hashString, renderMarkdownLite, isSafeImageUrl, fileTimestamp, stripMarkdown, mergeRanges, addRange, removeRangeAt, rangeSegments } from '../js/util.js';
+import { buildSession, scoreSession, buildExport, resultsFilename, buildClaudeSummary, setKey, poolIds, collectTags, isSessionValid, normalizeSession, answeredCount, toggleStrike, clearStrike, isStruck, itemHighlights, UNTAGGED } from '../js/session.js';
 import { SCHEMA, fillPrompt, EXAMPLE_QUESTION, PROMPT_TEMPLATE } from '../js/prompt.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -255,6 +255,56 @@ test('stripMarkdown', () => {
   assert.equal(stripMarkdown('**A** *b*\n| x | y |\n|---|---|'), 'A b x y');
 });
 
+/* ---------- highlight ranges ---------- */
+section('Highlight ranges');
+test('mergeRanges sorts, merges overlapping/touching ranges, drops junk', () => {
+  assert.deepEqual(mergeRanges([{ start: 10, end: 15 }, { start: 0, end: 4 }, { start: 3, end: 6 }]), [{ start: 0, end: 6 }, { start: 10, end: 15 }]);
+  assert.deepEqual(mergeRanges([{ start: 0, end: 5 }, { start: 5, end: 8 }]), [{ start: 0, end: 8 }]);
+  assert.deepEqual(mergeRanges([{ start: 2, end: 9 }, { start: 3, end: 4 }]), [{ start: 2, end: 9 }]);
+  assert.deepEqual(mergeRanges([{ start: 4, end: 4 }, { start: -1, end: 3 }, { start: 1.5, end: 3 }, null, 'x', { start: 1 }]), []);
+  assert.deepEqual(mergeRanges(undefined), []);
+  const input = [{ start: 3, end: 6 }, { start: 0, end: 4 }];
+  mergeRanges(input);
+  assert.deepEqual(input, [{ start: 3, end: 6 }, { start: 0, end: 4 }], 'input not mutated');
+});
+test('addRange / removeRangeAt', () => {
+  let r = addRange([], { start: 5, end: 10 });
+  r = addRange(r, { start: 8, end: 12 });
+  r = addRange(r, { start: 20, end: 25 });
+  assert.deepEqual(r, [{ start: 5, end: 12 }, { start: 20, end: 25 }]);
+  assert.deepEqual(removeRangeAt(r, 5), [{ start: 20, end: 25 }]);
+  assert.deepEqual(removeRangeAt(r, 11), [{ start: 20, end: 25 }]);
+  assert.deepEqual(removeRangeAt(r, 12), r, 'end is exclusive');
+  assert.deepEqual(removeRangeAt(r, 15), r);
+});
+test('rangeSegments maps offsets onto text nodes', () => {
+  // "The **quick** brown" -> text nodes "The ", "quick", " brown"
+  const lengths = [4, 5, 6];
+  assert.deepEqual(rangeSegments(lengths, [{ start: 2, end: 11 }]), [
+    { node: 0, start: 2, end: 4, range: 0 },
+    { node: 1, start: 0, end: 5, range: 0 },
+    { node: 2, start: 0, end: 2, range: 0 },
+  ]);
+  // Two ranges inside one node, one range ending exactly at a node boundary.
+  assert.deepEqual(rangeSegments([10, 5], [{ start: 6, end: 10 }, { start: 1, end: 3 }]), [
+    { node: 0, start: 1, end: 3, range: 0 },
+    { node: 0, start: 6, end: 10, range: 1 },
+  ]);
+  // Overlapping input is merged first; empty text nodes and out-of-range offsets are skipped.
+  assert.deepEqual(rangeSegments([3, 0, 3], [{ start: 1, end: 4 }, { start: 2, end: 5 }, { start: 50, end: 60 }]), [
+    { node: 0, start: 1, end: 3, range: 0 },
+    { node: 2, start: 0, end: 2, range: 0 },
+  ]);
+  assert.deepEqual(rangeSegments([5], []), []);
+});
+test('table cells: a range across cells yields one piece per cell', () => {
+  // | Na | 140 | -> "Na", "140" (no text between cells)
+  assert.deepEqual(rangeSegments([2, 3], [{ start: 1, end: 4 }]), [
+    { node: 0, start: 1, end: 2, range: 0 },
+    { node: 1, start: 0, end: 2, range: 0 },
+  ]);
+});
+
 /* ---------- session ---------- */
 section('Session: shuffling, answer remap, scoring, export');
 const set = mkSet([
@@ -338,6 +388,22 @@ test('setKey and session validity', () => {
   const bad = JSON.parse(JSON.stringify(s));
   bad.items[0].order = [0, 0, 1, 2];
   assert.ok(!isSessionValid(set, bad));
+});
+test('highlights: new items start empty, survive save/load, old sessions default to []', () => {
+  const s = buildSession(set, { seed: 3 });
+  assert.ok(s.items.every((it) => Array.isArray(it.highlights) && it.highlights.length === 0));
+  s.items[0].highlights = addRange(s.items[0].highlights, { start: 2, end: 9 });
+  const loaded = JSON.parse(JSON.stringify(s));
+  assert.ok(isSessionValid(set, loaded));
+  assert.deepEqual(itemHighlights(loaded.items[0]), [{ start: 2, end: 9 }]);
+  delete loaded.items[1].highlights; // saved by an older version
+  loaded.items[2].highlights = 'garbage';
+  assert.ok(isSessionValid(set, loaded));
+  assert.deepEqual(itemHighlights(loaded.items[1]), []);
+  assert.deepEqual(itemHighlights(loaded.items[2]), []);  normalizeSession(set, loaded);
+  assert.deepEqual(loaded.items[0].highlights, [{ start: 2, end: 9 }]);
+  assert.deepEqual(loaded.items[1].highlights, []);
+  assert.deepEqual(loaded.items[2].highlights, []);
 });
 
 test('strikes store original indexes and map correctly under shuffled options', () => {
