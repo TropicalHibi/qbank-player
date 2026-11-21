@@ -85,9 +85,33 @@ try {
       await page.waitForSelector('dialog.lightbox', { state: 'detached' });
       log('image lightbox opens and closes with Esc');
     }
-    // Pick B on odd questions, the shown correct one is unknown, so just choose by key.
-    await page.keyboard.press(i % 2 ? 'b' : '1');
-    await page.waitForSelector('.feedback');
+    if (i === 0) {
+      // Confirm-before-submit: Enter with nothing picked, then select → change → submit.
+      assert.equal(await page.isDisabled('button.submit-answer'), true, 'Submit answer disabled until something is picked');
+      assert.equal(await page.isVisible('.quiz-footer button:has-text("Next")'), false, 'Next hidden until answered');
+      await page.evaluate(() => document.activeElement?.blur()); // focus may be on the image button after the lightbox
+      await page.keyboard.press('Enter');
+      await page.waitForSelector('#toast.show:has-text("Choose an answer first")');
+      await page.keyboard.press('a');
+      await page.waitForSelector('.option.pending[data-display="0"]');
+      assert.equal(await page.$('.feedback'), null, 'no reveal while pending');
+      await page.waitForSelector('#sr-live:has-text("A selected, press Enter to submit")'); // set on the next frame
+      await page.keyboard.press('2');
+      assert.deepEqual(await page.$$eval('.option.pending', (x) => x.map((b) => b.dataset.display)), ['1'], 'new pick replaces the old one');
+      assert.equal(await page.getAttribute('.option[data-display="1"]', 'aria-pressed'), 'true');
+      assert.equal(await page.textContent('.navigator summary'), 'Navigator · 0/5 answered', 'pending is not answered');
+      await page.click('button.submit-answer');
+      await page.waitForSelector('.feedback');
+      assert.equal(await page.isVisible('button.submit-answer'), false);
+      assert.match(await page.$eval('.option[data-display="1"]', (b) => b.className), /\b(correct|incorrect)\b/, 'the changed pick was graded');
+      log('tutor confirm-before-submit: empty Enter toast, select → change → submit → reveal');
+    } else {
+      // Pick B on odd questions, the shown correct one is unknown, so just choose by key.
+      await page.keyboard.press(i % 2 ? 'b' : '1');
+      assert.equal(await page.$('.feedback'), null, 'no reveal before submitting');
+      await page.keyboard.press('Enter'); // submit
+      await page.waitForSelector('.feedback');
+    }
     const nOpts = await page.$$eval('.options .option', (x) => x.length);
     const nExpl = await page.$$eval('.options .explanation', (x) => x.length);
     assert.equal(nExpl, nOpts, 'every option shows an explanation');
@@ -268,6 +292,7 @@ try {
     await mp.click('button[type=submit]:has-text("Start")');
     await mp.waitForSelector('.question-card');
     await mp.keyboard.press('a');
+    await mp.keyboard.press('Enter');
     await mp.waitForSelector('.feedback');
     await shot('mobile-dark', mp);
     await m.close();

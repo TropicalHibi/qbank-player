@@ -3,7 +3,7 @@
 
 import { $, el, setChildren, showModal, toast } from './dom.js';
 import { loadSetFromText, loadSetFromFile, loadSetFromUrl } from './loader.js';
-import { setKey, isSessionValid, buildSession, scoreSession } from './session.js';
+import { setKey, isSessionValid, normalizeSession, buildSession, scoreSession } from './session.js';
 import * as store from './storage.js';
 import { relativeTime } from './util.js';
 import { renderStart } from './start.js';
@@ -62,7 +62,7 @@ function showLoading() {
 function getResumable() {
   if (!state.set) return null;
   const p = store.loadProgress(state.key);
-  return p && !p.finished && isSessionValid(state.set, p) ? p : null;
+  return p && !p.finished && isSessionValid(state.set, p) ? normalizeSession(state.set, p) : null;
 }
 
 /* ---------- library ---------- */
