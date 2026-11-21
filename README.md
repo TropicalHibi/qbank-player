@@ -50,7 +50,7 @@ After a set loads you pick the mode, timer, shuffling, a tag filter (or **Missed
 
 In either mode, select text in the question stem with the mouse or by touch, then tap the **Highlight** button that appears below the selection. Click a highlight to remove it, or use **Clear highlights** above the question. Highlights are saved with your progress and also show in the results review. Selecting text inside an answer option doesn't choose that option.
 
-Progress is saved in your browser after every answer, so a refresh resumes where you left off. Recently opened sets appear in the Library with a **Resume** button.
+Progress is saved in your browser after every answer, so a refresh resumes where you left off. Recently opened sets appear in the Library with a **Resume** button. To move that data to another browser or keep it safe, use **Your data → Back up** and **Restore…** in the Library (see [Privacy](#privacy)).
 
 ## Generating sets with Claude
 
@@ -145,6 +145,7 @@ Each bundled set gets a shareable link: `https://<user>.github.io/qbank-player/?
 ## Privacy
 
 - **Files you load from your computer or paste never leave your browser.** They are parsed locally. Progress, recent sets and preferences are stored in your browser only (localStorage and IndexedDB). There is no server, analytics or tracking.
+- **Backups are files you keep.** In the Library, **Your data → Back up** downloads `qbank-player-backup-YYYY-MM-DD-HHmm.json` with your progress, results, recent sets (including full copies of locally loaded sets) and preferences. Nothing is uploaded. **Restore…** (or dropping the backup file on the page) lets you merge it with or replace the data in this browser; replacing deletes current progress first. Treat backup files like the sets inside them: they may contain material you shouldn't share.
 - **Anything committed to `/sets` is public** once the site is deployed. Don't commit copyrighted question banks, or material you aren't allowed to share.
 - Anything you paste into Claude or another LLM is sent to that provider under its terms.
 - Set content is treated as untrusted. HTML in sets is escaped and never rendered, and images are only loaded from allowed URL schemes.

@@ -1408,6 +1408,42 @@ kbd {
   margin-top: 2rem;
 }
 
+/* ---------- your data: back up / restore (#28) ---------- */
+.data-card {
+  margin: 0 0 2rem;
+}
+.data-card h2 {
+  font-size: 1.05rem;
+}
+.data-card .muted {
+  margin: 0 0 0.75rem;
+  max-width: var(--measure);
+}
+.data-blocked,
+.backup-replace-warn {
+  color: var(--text);
+  margin: 0.75rem 0 0;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--warn-border);
+  border-radius: var(--radius-sm);
+  background: var(--warn-bg);
+}
+.backup-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0.5rem 0 0.9rem;
+  color: var(--text);
+}
+.backup-facts dt {
+  color: var(--muted);
+}
+.backup-facts dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
 /* ---------- modal / lightbox / toast ---------- */
 dialog {
   color: var(--text);
