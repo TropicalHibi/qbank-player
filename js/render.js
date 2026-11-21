@@ -2,7 +2,11 @@
 
 import { el, openLightbox } from './dom.js';
 import { renderMarkdownLite, isSafeImageUrl, LETTERS } from './util.js';
-import { questionTags } from './session.js';
+import { questionTags, isStruck } from './session.js';
+
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_SLOP_PX = 10;
+const STRUCK_NOTE = ' (struck out)';
 
 export function renderStem(q) {
   return el('div', { class: 'stem prose', html: renderMarkdownLite(q.stem) });
@@ -28,19 +32,78 @@ export function renderImage(q, number) {
 }
 
 /**
+ * Wire right-click and touch long-press on an option button to `fire()`.
+ * Right-click never opens the browser menu. Returns {consumeClick()}, which the click
+ * handler checks so a long-press never also selects the option.
+ */
+function bindStrikeGestures(btn, fire) {
+  let timer = 0;
+  let start = null; // set while a touch/pen press is down
+  let suppressClick = false;
+  let lastFire = 0;
+  const cancel = () => {
+    clearTimeout(timer);
+    timer = 0;
+  };
+  const fireOnce = () => {
+    // Some touch browsers send contextmenu as well as our long-press; toggle only once.
+    if (Date.now() - lastFire < 800) return;
+    lastFire = Date.now();
+    fire();
+  };
+  btn.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    if (start) suppressClick = true; // touch-generated: the lift must not select
+    cancel();
+    fireOnce();
+  });
+  btn.addEventListener('pointerdown', (e) => {
+    suppressClick = false;
+    if (e.pointerType === 'mouse' || !e.isPrimary) return;
+    start = { x: e.clientX, y: e.clientY };
+    cancel();
+    timer = setTimeout(() => {
+      timer = 0;
+      suppressClick = true;
+      fireOnce();
+    }, LONG_PRESS_MS);
+  });
+  btn.addEventListener('pointermove', (e) => {
+    if (timer && start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > LONG_PRESS_SLOP_PX) cancel();
+  });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) {
+    btn.addEventListener(ev, () => {
+      cancel();
+      start = null;
+    });
+  }
+  // The click that ends a long-press (or follows a right-click) must not select the option.
+  return {
+    consumeClick() {
+      const s = suppressClick;
+      suppressClick = false;
+      return s;
+    },
+  };
+}
+
+/**
  * Render answer options.
  * @param {object} q question
- * @param {object} item session item ({order, chosen, pending?}); before reveal, a pending
+ * @param {object} item session item ({order, chosen, pending?, struck?}); before reveal, a pending
  *   (unsubmitted, tutor mode) choice is shown as selected
- * @param {{reveal: boolean, interactive: boolean, onSelect?: (original:number)=>void}} o
+ * @param {{reveal: boolean, interactive: boolean, onSelect?: (original:number)=>void, onStrike?: (original:number)=>void}} o
+ *   With `onStrike`, each option gets a strike toggle button, plus right-click / long-press.
+ *   Without it, strikes are shown read-only.
  */
-export function renderOptions(q, item, { reveal, interactive, onSelect }) {
+export function renderOptions(q, item, { reveal, interactive, onSelect, onStrike }) {
   const list = el('ol', { class: ['options', reveal && 'revealed'], attrs: { role: 'list' } });
   item.order.forEach((orig, d) => {
     const opt = q.options[orig];
     const isCorrect = orig === q.answer;
     const isChosen = item.chosen === orig;
     const isPending = !reveal && item.chosen === null && item.pending != null && item.pending === orig;
+    const struck = isStruck(item, orig);
     let state = '';
     let mark = '';
     let srNote = '';
@@ -67,23 +130,49 @@ export function renderOptions(q, item, { reveal, interactive, onSelect }) {
       el('span', { class: 'opt-letter', attrs: { 'aria-hidden': 'true' }, text: LETTERS[d] }),
       el('span', { class: 'opt-text prose', html: renderMarkdownLite(opt.text) }),
       el('span', { class: 'opt-mark', attrs: { 'aria-hidden': 'true' }, text: mark }),
-      el('span', { class: 'sr-only', text: srNote }),
+      el('span', { class: 'sr-only opt-note', dataset: { base: srNote }, text: srNote + (struck ? STRUCK_NOTE : '') }),
     ];
+    const cls = ['option', state, struck && 'struck'];
+    let gestures = null;
     const body = interactive
       ? el(
           'button',
           {
-            class: ['option', state],
+            class: cls,
             type: 'button',
             dataset: { display: String(d) },
             attrs: { 'aria-pressed': String(isChosen || isPending), 'aria-label': null },
-            on: { click: () => onSelect && onSelect(orig) },
+            on: {
+              click: () => {
+                if (gestures && gestures.consumeClick()) return;
+                if (onSelect) onSelect(orig);
+              },
+            },
           },
           el('span', { class: 'sr-only', text: `Option ${LETTERS[d]}: ` }),
           content
         )
-      : el('div', { class: ['option', state, 'static'] }, el('span', { class: 'sr-only', text: `Option ${LETTERS[d]}: ` }), content);
-    const li = el('li', { class: 'option-item' }, body);
+      : el('div', { class: [...cls, 'static'] }, el('span', { class: 'sr-only', text: `Option ${LETTERS[d]}: ` }), content);
+    let strikeBtn = null;
+    if (onStrike) {
+      if (interactive) gestures = bindStrikeGestures(body, () => onStrike(orig));
+      strikeBtn = el(
+        'button',
+        {
+          class: 'strike-btn',
+          type: 'button',
+          title: `Strike out ${LETTERS[d]} (Shift+${LETTERS[d]}, right-click or long-press)`,
+          dataset: { display: String(d) },
+          attrs: { 'aria-pressed': String(struck), 'aria-label': `Strike out option ${LETTERS[d]}` },
+          on: {
+            click: () => onStrike(orig),
+            contextmenu: (e) => e.preventDefault(),
+          },
+        },
+        el('span', { class: 'strike-icon', attrs: { 'aria-hidden': 'true' }, text: 'abc' })
+      );
+    }
+    const li = el('li', { class: 'option-item', dataset: { original: String(orig) } }, el('div', { class: 'option-row' }, body, strikeBtn));
     if (reveal) {
       li.append(
         el(
@@ -97,6 +186,20 @@ export function renderOptions(q, item, { reveal, interactive, onSelect }) {
     list.append(li);
   });
   return list;
+}
+
+/**
+ * Sync strike state of an already-rendered options list with `item.struck`, in place,
+ * so focus and an in-progress touch stay on the same elements.
+ */
+export function updateStrikes(list, item) {
+  for (const li of list.querySelectorAll('li.option-item')) {
+    const struck = isStruck(item, Number(li.dataset.original));
+    li.querySelector('.option')?.classList.toggle('struck', struck);
+    li.querySelector('.strike-btn')?.setAttribute('aria-pressed', String(struck));
+    const note = li.querySelector('.opt-note');
+    if (note) note.textContent = note.dataset.base + (struck ? STRUCK_NOTE : '');
+  }
 }
 
 /** Discriminator callout + tags + source (only shown after answering). */

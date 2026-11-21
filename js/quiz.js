@@ -2,10 +2,12 @@
 // and reveals feedback; navigator allows jumping to answered questions (read-only) but
 // not ahead. Exam: no feedback, free navigation,
 // answers changeable until Submit; optional block countdown.
+// Both modes: options can be struck out (button, right-click, long-press, Shift+key);
+// strikes are stored as original indexes in `item.struck` and never affect scoring.
 
 import { el, setChildren, showModal, announce, isDialogOpen, toast } from './dom.js';
-import { renderStem, renderImage, renderOptions, renderReveal } from './render.js';
-import { indexById, answeredCount } from './session.js';
+import { renderStem, renderImage, renderOptions, renderReveal, updateStrikes } from './render.js';
+import { indexById, answeredCount, toggleStrike, clearStrike } from './session.js';
 import { formatClock, LETTERS } from './util.js';
 
 const TICK_MS = 500;
@@ -76,6 +78,8 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
     ' select (use ',
     el('kbd', { text: '6' }),
     ' for F) · ',
+    el('kbd', { text: 'Shift' }),
+    '+letter/number, right-click or long-press strike out · ',
     el('kbd', { text: 'Enter' }),
     exam ? ' next/submit · ' : ' submit answer, then next · ',
     el('kbd', { text: 'F' }),
@@ -98,7 +102,8 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
 
     qCount.textContent = `Question ${idx + 1} / ${N}`;
     const heading = el('h2', { attrs: { tabindex: '-1' }, text: `Question ${idx + 1} of ${N}${reveal ? ' (answered)' : ''}` });
-    const options = renderOptions(q, it, { reveal, interactive: true, onSelect: select });
+    // Strikes are editable until the answer is locked (tutor reveal); then shown read-only.
+    const options = renderOptions(q, it, { reveal, interactive: true, onSelect: select, onStrike: reveal ? null : strike });
     if (reveal) options.querySelectorAll('button.option').forEach((b) => b.setAttribute('aria-disabled', 'true'));
     let feedback = null;
     if (reveal) {
@@ -251,11 +256,13 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
     if (exam) {
       accrue();
       it.chosen = original;
+      clearStrike(it, original); // selecting a struck option un-strikes it
       render();
       announce(`Selected ${LETTERS[d]}.`);
     } else {
       if (it.chosen !== null) return; // locked in tutor mode
       it.pending = original; // not an answer until submitted
+      clearStrike(it, original); // picking a struck option un-strikes it
       render();
       announce(`${LETTERS[d]} selected, press Enter to submit.`);
     }
@@ -280,6 +287,17 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
     const ok = it.chosen === q.answer;
     feedbackLive.textContent = ok ? 'Correct.' : `Incorrect. The correct answer is ${LETTERS[it.order.indexOf(q.answer)]}.`;
     focusOption(it.order.indexOf(it.chosen));
+    save();
+  }
+
+  function strike(original) {
+    const it = items[idx];
+    if (!exam && it.chosen !== null) return; // locked in tutor mode
+    const list = card.querySelector('.options');
+    if (!list) return;
+    const on = toggleStrike(it, original);
+    updateStrikes(list, it);
+    announce(`Option ${LETTERS[it.order.indexOf(original)]} ${on ? 'struck out' : 'restored'}.`);
     save();
   }
 
@@ -374,19 +392,25 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
     const t = e.target;
     if (t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]')) return;
     const k = e.key;
-    if (k === 'f' || k === 'F') {
+    if (!e.shiftKey && (k === 'f' || k === 'F')) {
       e.preventDefault();
       toggleFlag();
       return;
     }
     let d = -1;
-    if (/^[1-8]$/.test(k)) d = +k - 1;
+    if (e.shiftKey) {
+      // Shift+digit gives layout-dependent symbols in e.key, so read the physical key.
+      const m = /^(?:Digit|Numpad)([1-8])$/.exec(e.code || '');
+      if (m) d = +m[1] - 1;
+      else if (/^[a-hA-H]$/.test(k)) d = LETTERS.indexOf(k.toUpperCase());
+    } else if (/^[1-8]$/.test(k)) d = +k - 1;
     else if (/^[a-hA-H]$/.test(k)) d = LETTERS.indexOf(k.toUpperCase());
     if (d >= 0) {
       const it = items[idx];
       if (d < it.order.length) {
         e.preventDefault();
-        select(it.order[d]);
+        if (e.shiftKey) strike(it.order[d]);
+        else select(it.order[d]);
       }
       return;
     }
