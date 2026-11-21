@@ -134,6 +134,9 @@ try {
   await page.click('button[type=submit]:has-text("Start")');
   await page.waitForSelector('.question-card');
   let sawImage = false;
+  let explSeen = 0;
+  let noExplSeen = 0;
+  const EXPL_STEM = 'ischemic cardiomyopathy'; // q1 in sets/example.json has explanation + explanationImages
   for (let i = 0; i < 5; i++) {
     const hasImg = await page.$('.q-image');
     if (hasImg && !sawImage) {
@@ -183,6 +186,35 @@ try {
     assert.ok(await page.$('.callout.discriminator'), 'discriminator shown');
     assert.ok(await page.$('.q-meta .tag'), 'tags shown after answering');
     assert.equal(await page.$$eval('.option.correct .opt-mark', (x) => x[0].textContent), '✓');
+    if ((await page.textContent('.question-card .stem')).includes(EXPL_STEM)) {
+      // Overall explanation: after the option explanations, before the Key distinction callout.
+      const qNum = (await page.textContent('.question-card h2')).match(/Question (\d+) of/)[1];
+      assert.equal(await page.textContent('.question-card .q-explanation h3'), 'Explanation');
+      assert.match(await page.textContent('.question-card .q-explanation .prose'), /hyperkalemia/);
+      assert.equal(await page.$eval('.question-card .q-explanation strong', (x) => x.textContent), 'hyperkalemia', 'md-lite formatting');
+      assert.deepEqual(
+        await page.$$eval('.question-card > *', (xs) => xs.map((x) => x.className).filter((c) => /^(options|q-explanation|callout)/.test(c))),
+        ['options revealed', 'q-explanation', 'callout discriminator'],
+        'explanation sits between the options and the Key distinction'
+      );
+      const img = await page.$('.question-card .q-explanation img');
+      assert.equal(await img.getAttribute('alt'), `Explanation image 1 for question ${qNum}`);
+      assert.equal(await img.getAttribute('loading'), 'lazy');
+      assert.equal(await img.getAttribute('referrerpolicy'), 'no-referrer');
+      await a11y('quiz-tutor-explanation');
+      await page.click('.question-card .q-explanation .expl-image');
+      await page.waitForSelector('dialog.lightbox[open]');
+      assert.equal(await page.getAttribute('dialog.lightbox img', 'alt'), `Explanation image 1 for question ${qNum}`);
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('dialog.lightbox', { state: 'detached' });
+      await page.evaluate(() => document.activeElement?.blur()); // focus returned to the thumbnail; Enter must go to Next
+      explSeen++;
+      log('tutor feedback shows the Explanation section; its image opens in the lightbox');
+    } else {
+      assert.equal(await page.$('.question-card .q-explanation'), null, 'no Explanation section without explanation');
+      assert.equal(await page.$('.question-card h3:has-text("Explanation")'), null, 'no Explanation heading without explanation');
+      noExplSeen++;
+    }
     if (i === 1) {
       // Jump back to Q1 via navigator (read-only), Q3+ must be locked.
       assert.equal(await page.isDisabled('.nav-cell >> nth=2'), false, 'next unanswered question reachable');
@@ -204,6 +236,7 @@ try {
     await page.keyboard.press('Enter');
   }
   await page.waitForSelector('#results-title');
+  assert.deepEqual([explSeen, noExplSeen], [1, 4], 'one question with an explanation, four without');
   log('tutor mode: answered all 5, results shown');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, 'no horizontal overflow on results');
   const scoreText = await page.textContent('.stat .value');
@@ -214,6 +247,21 @@ try {
   await page.waitForSelector('.review-item[open] .review-body .explanation');
   await shot('results');
   await a11y('results');
+  {
+    const explItem = page.locator('.review-item', { has: page.locator('.r-snippet', { hasText: EXPL_STEM }) });
+    if (!(await explItem.evaluate((d) => d.open))) await explItem.locator('summary').click();
+    await explItem.locator('.review-body .q-explanation').waitFor();
+    assert.equal(await explItem.locator('.q-explanation h3').textContent(), 'Explanation');
+    assert.match(await explItem.locator('.q-explanation img').getAttribute('alt'), /^Explanation image 1 for question \d$/);
+    await page.evaluate(() => document.querySelectorAll('.review-item[open]').forEach((d) => d.querySelector('.q-explanation') || (d.open = false)));
+    await a11y('results-explanation');
+    await explItem.evaluate((d) => (d.open = false));
+    const others = page.locator('.review-item', { hasNot: page.locator('.r-snippet', { hasText: EXPL_STEM }) }).first();
+    if (!(await others.evaluate((d) => d.open))) await others.locator('summary').click();
+    await others.locator('.review-body .option').first().waitFor();
+    assert.equal(await others.locator('.q-explanation').count(), 0, 'review: no Explanation section without explanation');
+    log('results review shows the Explanation section (and none where absent)');
+  }
 
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Export results")')]);
   assert.match(dl.suggestedFilename(), /^example-mixed-step-1-systems-results-\d{4}-\d{2}-\d{2}-\d{4}\.json$/);
@@ -274,6 +322,7 @@ try {
   await page.keyboard.press('2');
   assert.ok(await page.$('.option.selected'));
   assert.equal(await page.$('.feedback'), null, 'no feedback in exam mode');
+  assert.equal(await page.$('.q-explanation'), null, 'no explanation in exam mode before results');
   await page.keyboard.press('3'); // change answer (C was struck)
   assert.equal(await page.$$eval('.option.selected', (x) => x.length), 1);
   assert.deepEqual(await struckDisplays(), [0, 3], 'selecting a struck option clears its strike');
@@ -595,6 +644,41 @@ try {
   await shot('create');
   await a11y('create');
 
+  /* ---------- explanation renderer edge cases (sets that skipped validation) ---------- */
+  {
+    const r = await page.evaluate(async () => {
+      const { renderExplanation } = await import('./js/render.js');
+      const none = [
+        renderExplanation({}, 1),
+        renderExplanation({ explanation: '   ' }, 1),
+        renderExplanation({ explanation: '', explanationImages: [] }, 1),
+        renderExplanation({ explanation: ' ', explanationImages: ['javascript:alert(1)', 'vbscript:x', 42] }, 1),
+      ].map((x) => x === null);
+      const pix = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+      const onlyImg = renderExplanation({ explanationImages: ['javascript:alert(1)', pix] }, 7);
+      const broken = renderExplanation({ explanation: 'x', explanationImages: ['data:image/png;base64,AAAA'] }, 3);
+      document.body.prepend(broken);
+      await new Promise((res) => setTimeout(res, 300));
+      const out = {
+        none,
+        onlyImgHeading: onlyImg.querySelector('h3')?.textContent,
+        onlyImgProse: !!onlyImg.querySelector('.prose'),
+        onlyImgAlts: [...onlyImg.querySelectorAll('img')].map((i) => i.alt),
+        brokenNote: broken.querySelector('.expl-image-failed')?.textContent,
+        brokenImgs: broken.querySelectorAll('img').length,
+      };
+      broken.remove();
+      return out;
+    });
+    assert.deepEqual(r.none, [true, true, true, true], 'missing/blank explanation and no safe images renders nothing');
+    assert.equal(r.onlyImgHeading, 'Explanation', 'images without text still get the heading');
+    assert.equal(r.onlyImgProse, false);
+    assert.deepEqual(r.onlyImgAlts, ['Explanation image 1 for question 7'], 'unsafe URL skipped silently');
+    assert.equal(r.brokenNote, 'Image failed to load');
+    assert.equal(r.brokenImgs, 0, 'broken image replaced by the note');
+    log('explanation: blank renders nothing, unsafe URLs skipped, broken image shows a note');
+  }
+
   /* ---------- dark mode + mobile ---------- */
   await page.click('#theme-toggle');
   assert.equal(await page.getAttribute('html', 'data-theme'), 'dark');
@@ -655,6 +739,101 @@ try {
   assert.equal(bk.badOk, false);
   assert.ok(bk.badErrors > 0);
   log('backup: exportAll → importAll replace round-trips; merge adds missing; invalid backup rejected');
+
+  /* ---------- Library UI: back up, clear site data, restore, resume (#28) ---------- */
+  const clearSiteData = () =>
+    page.evaluate(() => {
+      localStorage.clear();
+      indexedDB.deleteDatabase('qbank-player'); // completes once this page's connection closes on reload
+    });
+  await clearSiteData();
+  await page.goto(site + '?set=sets/example.json');
+  await page.waitForSelector('#start-title');
+  await page.check('input[name=mode][value=exam]');
+  await page.click('button[type=submit]:has-text("Start")');
+  await page.waitForSelector('.question-card');
+  await page.keyboard.press('a');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('b');
+  await page.keyboard.press('ArrowRight');
+  await page.waitForSelector('.question-card h2:has-text("Question 3 of 5")');
+  await page.click('#theme-toggle'); // a non-default pref to round-trip
+  const themeBefore = await page.getAttribute('html', 'data-theme');
+  await page.goto(site);
+  await page.waitForSelector('#recent-list .set-item button:has-text("Resume")');
+  const [bdl] = await Promise.all([page.waitForEvent('download'), page.click('#backup-btn')]);
+  assert.match(bdl.suggestedFilename(), /^qbank-player-backup-\d{4}-\d{2}-\d{2}-\d{4}\.json$/);
+  const backupPath = await bdl.path();
+  const backupJson = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
+  assert.equal(backupJson.app, 'qbank-player');
+  assert.equal(backupJson.sets.length, 1);
+  assert.equal(Object.keys(backupJson.localStorage).filter((k) => k.startsWith('qbp:progress:')).length, 1);
+  await page.waitForSelector('#toast.show:has-text("Backup downloaded: 1 set, 1 saved session.")');
+  log(`Back up downloads ${bdl.suggestedFilename()} and reports 1 set, 1 saved session`);
+
+  await clearSiteData();
+  await page.reload();
+  await page.waitForSelector('#bundled-list a.set-title');
+  assert.equal(await page.isHidden('#recent-section'), true, 'site data cleared');
+  await page.setInputFiles('#restore-input', backupPath);
+  await page.waitForSelector('dialog.modal[open]');
+  const dlgText = await page.textContent('dialog.modal');
+  assert.match(dlgText, /Restore backup\?/);
+  assert.match(dlgText, /Question sets\s*1/);
+  assert.match(dlgText, /Saved sessions\s*1/);
+  assert.match(dlgText, /Replace deletes all current progress/);
+  assert.deepEqual(await page.$$eval('dialog.modal .modal-actions button', (b) => b.map((x) => x.textContent)), ['Cancel', 'Replace current data', 'Merge with current data']);
+  await a11y('restore-dialog');
+  await page.click('dialog.modal button:has-text("Replace current data")');
+  await page.waitForSelector('dialog.modal', { state: 'detached' });
+  await page.waitForSelector('#toast.show:has-text("Replaced data: restored 1 set, 1 saved session")');
+  assert.equal(await page.getAttribute('html', 'data-theme'), themeBefore, 'restored theme applied');
+  await page.click('#recent-list .set-item button:has-text("Resume")');
+  await page.waitForSelector('.question-card h2:has-text("Question 3 of 5")');
+  assert.match(await page.textContent('.navigator summary'), /2\/5 answered/);
+  log('clear site data → Restore… (replace) → Resume continues at question 3 of 5');
+
+  await page.click('button:has-text("Save & exit")');
+  await page.waitForSelector('.resume-card');
+  await page.goto(site);
+  await page.waitForSelector('#recent-list .set-item');
+  await page.setInputFiles('#file-input', backupPath); // the regular "Choose file…" detects a backup too
+  await page.waitForSelector('dialog.modal[open]:has-text("Restore backup?")');
+  await page.click('dialog.modal button:has-text("Merge with current data")');
+  await page.waitForSelector('#toast.show:has-text("Merged: restored 0 sets, 0 saved sessions")');
+  assert.match(await page.textContent('#toast'), /skipped \(kept your current copy\)/);
+  assert.equal(await page.isHidden('#load-errors'), true);
+  log('a backup chosen with "Choose file…" opens the restore dialog; merge reports skipped items');
+
+  await page.setInputFiles('#restore-input', { name: 'future.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ ...backupJson, backupVersion: 2 })) });
+  await page.waitForSelector('#load-errors:not([hidden]) li:has-text("backupVersion: unsupported version 2 (expected 1).")');
+  assert.match(await page.textContent('#load-errors h2'), /Couldn't restore "future.json"/);
+  assert.equal(await page.$('dialog.modal'), null, 'no dialog for an invalid backup');
+  await page.setInputFiles('#restore-input', path.join(root, 'sets/example.json'));
+  await page.waitForSelector('#load-errors li:has-text("app: missing")');
+  await page.setInputFiles('#restore-input', { name: 'broken.json', mimeType: 'application/json', buffer: Buffer.from('{"app": "qbank-player",') });
+  await page.waitForSelector('#load-errors:has-text("Couldn\'t restore \\"broken.json\\"")');
+  log('invalid backup, a question set, and broken JSON in Restore… show validation messages');
+
+  {
+    const b = await browser.newContext();
+    await b.addInitScript(() => {
+      Object.defineProperty(window, 'localStorage', {
+        get() {
+          throw new DOMException('blocked', 'SecurityError');
+        },
+      });
+    });
+    const bp = await b.newPage();
+    bp.on('pageerror', (e) => problems.push(`pageerror (blocked storage): ${e.message}`));
+    await bp.goto(site);
+    await bp.waitForSelector('#bundled-list a.set-title');
+    assert.equal(await bp.isDisabled('#backup-btn'), true);
+    assert.equal(await bp.isDisabled('#restore-btn'), true);
+    assert.equal(await bp.isVisible('#data-blocked'), true);
+    await b.close();
+    log('with storage blocked, Back up and Restore… are disabled with an explanation');
+  }
 
   for (const [rule, where] of a11yWarnings) console.warn(`  a11y warning: ${rule} in ${[...where].join(', ')}`);
   assert.deepEqual(a11yFailures, [], 'no serious/critical accessibility violations:\n' + a11yFailures.join('\n'));

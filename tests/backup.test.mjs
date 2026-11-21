@@ -1,7 +1,7 @@
 // Run: node tests/backup.test.mjs   (no dependencies)
 import assert from 'node:assert/strict';
 
-import { validateBackup, mergeBackup, mergeRecents, makeBackup, backupFilename, isBackupKey, MAX_RECENTS } from '../js/backup.js';
+import { validateBackup, mergeBackup, mergeRecents, makeBackup, backupFilename, isBackupKey, MAX_RECENTS, looksLikeBackup, summarizeBackup, pluralize } from '../js/backup.js';
 
 let passed = 0;
 const failures = [];
@@ -158,6 +158,35 @@ test('does not mutate its inputs and ignores qbp:__test', () => {
   const m = mergeBackup(cur, inc);
   assert.equal(JSON.stringify([cur, inc]), snap);
   assert.ok(!('qbp:__test' in m.localStorage));
+});
+
+section('looksLikeBackup / summarizeBackup');
+test('looksLikeBackup detects app: "qbank-player" only', () => {
+  assert.equal(looksLikeBackup(good()), true);
+  assert.equal(looksLikeBackup({ app: 'qbank-player' }), true, 'even if otherwise invalid (validateBackup reports it)');
+  assert.equal(looksLikeBackup({ title: 'x', version: 1, questions: [] }), false);
+  assert.equal(looksLikeBackup({ app: 'other' }), false);
+  assert.equal(looksLikeBackup(null), false);
+  assert.equal(looksLikeBackup([{ app: 'qbank-player' }]), false);
+});
+test('summarizeBackup counts sets, unfinished sessions, results and recents', () => {
+  const b = good();
+  b.localStorage['qbp:progress:a'] = { finished: false, items: [] };
+  b.localStorage['qbp:progress:b'] = { finished: true, items: [] };
+  b.localStorage['qbp:last:a'] = { at: 1 };
+  b.localStorage['qbp:recents'] = [recent('a', 1), recent('b', 2)];
+  const s = summarizeBackup(b);
+  assert.equal(s.createdAt.toISOString(), '2026-01-31T12:34:56.000Z');
+  assert.deepEqual({ ...s, createdAt: null }, { createdAt: null, sets: 1, sessions: 1, results: 1, recents: 2 });
+});
+test('summarizeBackup tolerates malformed input', () => {
+  assert.deepEqual(summarizeBackup(null), { createdAt: null, sets: 0, sessions: 0, results: 0, recents: 0 });
+  assert.equal(summarizeBackup({ createdAt: 'not a date', sets: 'x', localStorage: [] }).createdAt, null);
+});
+test('pluralize', () => {
+  assert.equal(pluralize(1, 'set'), '1 set');
+  assert.equal(pluralize(0, 'set'), '0 sets');
+  assert.equal(pluralize(2, 'session'), '2 sessions');
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);
