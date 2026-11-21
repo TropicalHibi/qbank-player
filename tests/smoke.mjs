@@ -521,6 +521,47 @@ try {
     await m.close();
   }
 
+  /* ---------- backup round-trip (storage.js exportAll/importAll) ---------- */
+  const bk = await page.evaluate(async () => {
+    const st = await import('./js/storage.js');
+    const before = await st.exportAll();
+    const replaced = await st.importAll(before, { mode: 'replace' });
+    const after = await st.exportAll();
+    const incoming = {
+      ...before,
+      localStorage: { ...before.localStorage, 'qbp:smoke-extra': { n: 1 } },
+      sets: [...before.sets, { key: 'smoke-set', text: '{"title":"S","version":1,"questions":[]}' }],
+    };
+    const merged = await st.importAll(incoming, { mode: 'merge' });
+    const final = await st.exportAll();
+    const bad = await st.importAll({ app: 'nope' }, { mode: 'replace' });
+    const same = (a, b) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
+    return {
+      app: before.app,
+      keys: Object.keys(before.localStorage),
+      sets: before.sets.length,
+      replacedOk: replaced.ok,
+      roundTrip: same(before.localStorage, after.localStorage) && JSON.stringify(before.sets.sort((a, b) => (a.key < b.key ? -1 : 1))) === JSON.stringify(after.sets.sort((a, b) => (a.key < b.key ? -1 : 1))),
+      merged,
+      extra: final.localStorage['qbp:smoke-extra'],
+      finalSets: final.sets.length,
+      badOk: bad.ok,
+      badErrors: bad.errors.length,
+    };
+  });
+  assert.equal(bk.app, 'qbank-player');
+  assert.ok(bk.keys.includes('qbp:theme') && bk.keys.includes('qbp:recents') && !bk.keys.includes('qbp:__test'), 'backup has theme + recents: ' + bk.keys.join(', '));
+  assert.ok(bk.sets >= 1, 'backup includes saved set copies');
+  assert.equal(bk.replacedOk, true);
+  assert.equal(bk.roundTrip, true, 'export → replace → export is identical');
+  assert.equal(bk.merged.ok, true, bk.merged.errors.join('; '));
+  assert.deepEqual(bk.merged.restored, { keys: ['qbp:smoke-extra'], sets: ['smoke-set'] });
+  assert.deepEqual(bk.extra, { n: 1 });
+  assert.equal(bk.finalSets, bk.sets + 1);
+  assert.equal(bk.badOk, false);
+  assert.ok(bk.badErrors > 0);
+  log('backup: exportAll → importAll replace round-trips; merge adds missing; invalid backup rejected');
+
   for (const [rule, where] of a11yWarnings) console.warn(`  a11y warning: ${rule} in ${[...where].join(', ')}`);
   assert.deepEqual(a11yFailures, [], 'no serious/critical accessibility violations:\n' + a11yFailures.join('\n'));
   log('accessibility scans: no serious/critical violations (light + dark)');

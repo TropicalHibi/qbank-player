@@ -48,9 +48,10 @@ node tests/smoke.mjs
 
 ## Module map
 
-DOM-free (also run under Node and are unit-tested): `util.js`, `validate.js`, `loader.js`, `session.js`, `prompt.js`.
+DOM-free (also run under Node and are unit-tested): `util.js`, `validate.js`, `loader.js`, `session.js`, `prompt.js`, `backup.js`.
 
 - `js/app.js`: index.html entry point; routing (Library → Start → Quiz → Results), app state, and the Library view (file/paste/`?set=` loading, bundled and recent sets).
+- `js/backup.js`: backup file format; `validateBackup()`, the pure `mergeBackup()` rules (newer progress/results win, recents merged and capped, backup prefs win), `backupFilename()`.
 - `js/create.js`: create.html; tab registry (the manual builder will go here) and the prompt generator form.
 - `js/dom.js`: `el()` element builder, `setChildren()`, `showModal()`, lightbox, toast, aria-live `announce()`, clipboard, downloads.
 - `js/loader.js`: turns text, files and URLs into a validated set; strips fences and prose, repairs trailing commas and smart quotes (reported as warnings), reports parse errors with line and column.
@@ -60,7 +61,7 @@ DOM-free (also run under Node and are unit-tested): `util.js`, `validate.js`, `l
 - `js/results.js`: results view with score, per-tag breakdown, review list, redo/retake, JSON export and the Claude summary.
 - `js/session.js`: session model; `setKey()`, tag pool filtering, seeded shuffling with answer remap (responses store original indexes), scoring, export, summaries.
 - `js/start.js`: start screen with mode, timer, shuffle options, tag chips, the "Missed last session" filter and the question count.
-- `js/storage.js`: localStorage (progress, last results, recents, prefs) and IndexedDB (full set copies), with failures caught.
+- `js/storage.js`: localStorage (progress, last results, recents, prefs) and IndexedDB (full set copies), with failures caught; `exportAll()` / `importAll()` for backups.
 - `js/theme-init.js`: classic (non-module) script in `<head>` that applies the saved theme before first paint and wires the toggle.
 - `js/util.js`: seeded shuffle, hash, slug, `escapeHtml`, `renderMarkdownLite()`, `isSafeImageUrl()`, time formatting.
 - `js/validate.js`: hand-rolled v1 schema validator (`validateSet()`).
@@ -68,4 +69,4 @@ DOM-free (also run under Node and are unit-tested): `util.js`, `validate.js`, `l
 Other files:
 - `schema.json`: JSON Schema draft 2020-12 for sets.
 - `sets/index.json`: manifest of bundled sets (`[{file, title, count}]`).
-- `tests/`: `validate.test.mjs` (unit tests plus validation of every set) and `smoke.mjs` (Playwright end-to-end run with axe-core accessibility scans).
+- `tests/`: `validate.test.mjs` (unit tests plus validation of every set), `backup.test.mjs` (backup format and merge unit tests) and `smoke.mjs` (Playwright end-to-end run with axe-core accessibility scans).

@@ -2,8 +2,11 @@
 // keeps working in memory.
 //  - localStorage: progress, last-session results, recents metadata, prefs, theme
 //  - IndexedDB:    full JSON copies of recently loaded sets (can be large: base64 images)
+//  - backup:       exportAll() / importAll() move all of the above as one JSON object (format in backup.js)
 
-const PREFIX = 'qbp:';
+import { KEY_PREFIX, MAX_RECENTS, isBackupKey, makeBackup, mergeBackup, validateBackup } from './backup.js';
+
+const PREFIX = KEY_PREFIX;
 let _ls;
 
 function store() {
@@ -118,8 +121,6 @@ export async function deleteSetCopy(key) {
 
 /* ---------- recents ---------- */
 
-const MAX_RECENTS = 12;
-
 /** [{key, title, version, count, url|null, hasCopy, openedAt}] most recent first */
 export function getRecents() {
   const r = getJSON('recents', []);
@@ -139,4 +140,149 @@ export async function addRecent(entry, text) {
 export function removeRecent(key) {
   setJSON('recents', getRecents().filter((r) => r.key !== key));
   deleteSetCopy(key);
+}
+
+/* ---------- backup / restore ---------- */
+
+/** Raw `qbp:*` keys currently in localStorage (excluding internal ones). */
+function backupKeys(s) {
+  const keys = [];
+  try {
+    for (let i = 0; i < s.length; i++) {
+      const k = s.key(i);
+      if (isBackupKey(k)) keys.push(k);
+    }
+  } catch {
+    /* ignore */
+  }
+  return keys;
+}
+
+function readLocal() {
+  const out = {};
+  const s = store();
+  if (!s) return out;
+  for (const k of backupKeys(s)) {
+    try {
+      const v = s.getItem(k);
+      if (v != null) out[k] = JSON.parse(v);
+    } catch {
+      /* unreadable or not JSON: leave it out */
+    }
+  }
+  return out;
+}
+
+/** Every saved set copy as [{key, text}] ([] if IndexedDB is unavailable). */
+async function readSetCopies() {
+  const out = [];
+  const r = await idb('readonly', (st) => {
+    const req = st.openCursor();
+    req.onsuccess = () => {
+      const c = req.result;
+      if (!c) return;
+      if (typeof c.key === 'string' && c.value && typeof c.value.text === 'string') out.push({ key: c.key, text: c.value.text });
+      c.continue();
+    };
+    return null;
+  });
+  return r.ok ? out : [];
+}
+
+/** The full backup object: every `qbp:*` localStorage key (parsed) plus every IndexedDB set copy. */
+export async function exportAll() {
+  try {
+    return makeBackup(readLocal(), await readSetCopies());
+  } catch {
+    return makeBackup({}, []);
+  }
+}
+
+const errText = (e) => (e && e.name === 'QuotaExceededError' ? 'storage is full' : (e && e.message) || 'write failed');
+
+/**
+ * Restore a backup. mode 'replace' clears `qbp:*` keys and the set store first; 'merge' keeps
+ * existing data and adds what is missing (rules in mergeBackup()). Never throws.
+ * Returns { ok, restored: { keys: [...], sets: [...] }, skipped: [...], errors: [...] }.
+ */
+export async function importAll(backup, { mode = 'merge' } = {}) {
+  const result = { ok: false, restored: { keys: [], sets: [] }, skipped: [], errors: [] };
+  try {
+    if (mode !== 'replace' && mode !== 'merge') {
+      result.errors.push(`Unknown import mode ${JSON.stringify(mode)} (use "replace" or "merge").`);
+      return result;
+    }
+    const { valid, errors } = validateBackup(backup);
+    if (!valid) {
+      result.errors.push(...errors);
+      return result;
+    }
+    const s = store();
+    if (!s) {
+      result.errors.push('Browser storage is unavailable (blocked or disabled); nothing was restored.');
+      return result;
+    }
+
+    let localTarget; // key -> value to write
+    let setTarget; // [{key, text}] to write
+    const existingSets = new Set();
+
+    if (mode === 'replace') {
+      for (const k of backupKeys(s)) {
+        try {
+          s.removeItem(k);
+        } catch {
+          /* ignore */
+        }
+      }
+      const cleared = await idb('readwrite', (st) => st.clear());
+      if (!cleared.ok && backup.sets.length) result.errors.push('Could not clear saved set copies (IndexedDB unavailable).');
+      localTarget = {};
+      for (const [k, v] of Object.entries(backup.localStorage)) {
+        if (isBackupKey(k)) localTarget[k] = v;
+        else result.skipped.push(`${k} (internal key)`);
+      }
+      setTarget = backup.sets;
+    } else {
+      const current = await exportAll();
+      const merged = mergeBackup(current, backup);
+      localTarget = {};
+      for (const [k, v] of Object.entries(merged.localStorage)) {
+        const had = Object.prototype.hasOwnProperty.call(current.localStorage, k);
+        if (had && JSON.stringify(current.localStorage[k]) === JSON.stringify(v)) {
+          if (Object.prototype.hasOwnProperty.call(backup.localStorage, k)) result.skipped.push(`${k} (kept existing)`);
+        } else localTarget[k] = v;
+      }
+      for (const c of current.sets) existingSets.add(c.key);
+      setTarget = merged.sets.filter((x) => !existingSets.has(x.key));
+      for (const x of backup.sets) if (existingSets.has(x.key)) result.skipped.push(`set ${x.key} (already saved)`);
+    }
+
+    // Sets first, so recents can record which copies actually exist.
+    const haveSets = new Set(existingSets);
+    for (const { key, text } of setTarget) {
+      const ok = await idb('readwrite', (st) => st.put({ text, savedAt: Date.now() }, key));
+      if (ok.ok) {
+        result.restored.sets.push(key);
+        haveSets.add(key);
+      } else result.errors.push(`set ${key}: could not be saved (IndexedDB unavailable or full).`);
+    }
+    const recentsKey = PREFIX + 'recents';
+    if (Array.isArray(localTarget[recentsKey])) {
+      localTarget[recentsKey] = localTarget[recentsKey].map((r) => (r && typeof r.key === 'string' ? { ...r, hasCopy: haveSets.has(r.key) } : r));
+    }
+
+    for (const [k, v] of Object.entries(localTarget)) {
+      try {
+        s.setItem(k, JSON.stringify(v));
+        result.restored.keys.push(k);
+      } catch (e) {
+        result.errors.push(`${k}: ${errText(e)}.`);
+      }
+    }
+    result.ok = result.errors.length === 0;
+  } catch (e) {
+    result.errors.push(`Restore failed: ${errText(e)}.`);
+  }
+  return result;
 }
