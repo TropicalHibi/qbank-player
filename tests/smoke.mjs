@@ -222,7 +222,7 @@ try {
   assert.equal(exported.total, 5);
   assert.equal(exported.mode, 'tutor');
   assert.equal(exported.responses.length, 5);
-  assert.deepEqual(Object.keys(exported.responses[0]), ['id', 'chosen', 'correct', 'timeMs', 'flagged', 'tags']);
+  assert.deepEqual(Object.keys(exported.responses[0]), ['id', 'chosen', 'correct', 'timeMs', 'flagged', 'confidence', 'tags']);
   log(`export downloads ${dl.suggestedFilename()} (score ${exported.score}/5)`);
 
   await page.click('button:has-text("Copy summary for Claude")');
