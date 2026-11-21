@@ -938,6 +938,65 @@ button.option:hover {
 .option.incorrect .opt-mark {
   color: var(--incorrect);
 }
+/* Strikeout: line-through + dimmed + dashed letter ring, so it never relies on color alone. */
+.option-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+}
+.option-row > .option {
+  flex: 1;
+  min-width: 0;
+}
+button.option {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.option.struck .opt-text {
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+  color: var(--muted);
+}
+.option.struck .opt-letter {
+  border-style: dashed;
+  opacity: 0.7;
+}
+.option.struck:not(.correct):not(.incorrect) {
+  background: var(--bg);
+}
+.strike-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  min-height: var(--tap);
+  padding: 0;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+}
+.strike-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.strike-icon {
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+  font-weight: 600;
+}
+.strike-btn[aria-pressed='true'] {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.18);
+}
 .explanation {
   font-size: 0.92rem;
   color: var(--muted);

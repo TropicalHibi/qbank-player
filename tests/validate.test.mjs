@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { validateSet } from '../js/validate.js';
 import { extractJsonText, repairJson, parseJsonText, loadSetFromText } from '../js/loader.js';
 import { shuffle, mulberry32, slug, hashString, renderMarkdownLite, isSafeImageUrl, fileTimestamp, stripMarkdown } from '../js/util.js';
-import { buildSession, scoreSession, buildExport, resultsFilename, buildClaudeSummary, setKey, poolIds, collectTags, isSessionValid, UNTAGGED } from '../js/session.js';
+import { buildSession, scoreSession, buildExport, resultsFilename, buildClaudeSummary, setKey, poolIds, collectTags, isSessionValid, normalizeSession, toggleStrike, clearStrike, isStruck, UNTAGGED } from '../js/session.js';
 import { SCHEMA, fillPrompt, EXAMPLE_QUESTION, PROMPT_TEMPLATE } from '../js/prompt.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -338,6 +338,63 @@ test('setKey and session validity', () => {
   const bad = JSON.parse(JSON.stringify(s));
   bad.items[0].order = [0, 0, 1, 2];
   assert.ok(!isSessionValid(set, bad));
+});
+
+test('strikes store original indexes and map correctly under shuffled options', () => {
+  let checked = 0;
+  for (let seed = 1; seed <= 30; seed++) {
+    const s = buildSession(set, { seed, shuffleOptions: true });
+    for (const it of s.items) {
+      assert.deepEqual(it.struck, []);
+      const q = set.questions.find((x) => x.id === it.id);
+      // Strike the option displayed at position C (display index 2).
+      const shownText = q.options[it.order[2]].text;
+      assert.equal(toggleStrike(it, it.order[2]), true);
+      assert.deepEqual(it.struck, [it.order[2]]);
+      // Mapping back from the stored original index finds the same option at the same display slot.
+      assert.equal(it.order.indexOf(it.struck[0]), 2);
+      assert.equal(q.options[it.struck[0]].text, shownText);
+      // Survives JSON save/load, and a different display order still points at the same option.
+      const loaded = JSON.parse(JSON.stringify(it));
+      assert.ok(isStruck(loaded, it.order[2]));
+      const reordered = { ...loaded, order: [...loaded.order].reverse() };
+      assert.equal(q.options[reordered.struck[0]].text, shownText);
+      assert.equal(reordered.order.indexOf(reordered.struck[0]), reordered.order.length - 3);
+      if (it.order[2] !== 2) checked++;
+      // Toggle off; clearStrike is a no-op when not struck.
+      assert.equal(toggleStrike(it, it.order[2]), false);
+      assert.deepEqual(it.struck, []);
+      assert.equal(clearStrike(it, 0), false);
+    }
+  }
+  assert.ok(checked > 0, 'some seeds actually moved the struck option');
+});
+test('strikes keep a sorted unique list; clearStrike removes one', () => {
+  const it = { order: [3, 1, 0, 2], struck: [] };
+  toggleStrike(it, 2);
+  toggleStrike(it, 0);
+  toggleStrike(it, 3);
+  assert.deepEqual(it.struck, [0, 2, 3]);
+  assert.equal(clearStrike(it, 2), true);
+  assert.deepEqual(it.struck, [0, 3]);
+});
+test('strikes do not affect scoring or export', () => {
+  const s = buildSession(set, { seed: 3, shuffleQuestions: false });
+  s.items.forEach((it) => (it.chosen = set.questions.find((q) => q.id === it.id).answer));
+  const before = buildExport(set, s, new Date(0));
+  s.items.forEach((it) => toggleStrike(it, (it.chosen + 1) % 4));
+  assert.deepEqual(buildExport(set, s, new Date(0)), before);
+});
+test('older saved sessions without struck load as [] and bad values are dropped', () => {
+  const s = JSON.parse(JSON.stringify(buildSession(set, {})));
+  delete s.items[0].struck;
+  s.items[1].struck = 'nope';
+  s.items[2].struck = [2, 2, 9, -1, 1.5, '0', 0];
+  assert.ok(isSessionValid(set, s), 'old sessions stay valid');
+  normalizeSession(set, s);
+  assert.deepEqual(s.items[0].struck, []);
+  assert.deepEqual(s.items[1].struck, []);
+  assert.deepEqual(s.items[2].struck, [0, 2]);
 });
 
 /* ---------- prompt ---------- */

@@ -84,7 +84,7 @@ export function buildSession(set, o = {}) {
   if (count && count > 0 && count < chosen.length) chosen = chosen.slice(0, count);
   const items = chosen.map((id) => {
     const base = byId.get(id).options.map((_, i) => i);
-    return { id, order: shuffleOptions ? shuffle(base, rng) : base, chosen: null, timeMs: 0, flagged: false };
+    return { id, order: shuffleOptions ? shuffle(base, rng) : base, chosen: null, timeMs: 0, flagged: false, struck: [] };
   });
   return {
     v: 1,
@@ -115,6 +115,37 @@ export function isSessionValid(set, s) {
     if (!sorted.every((v, i) => v === i)) return false;
     return it.chosen === null || (Number.isInteger(it.chosen) && it.chosen >= 0 && it.chosen < q.options.length);
   });
+}
+
+/**
+ * Fill in fields that older saved sessions lack, and drop malformed values, in place.
+ * Call after isSessionValid() passes. Returns the session.
+ */
+export function normalizeSession(set, s) {
+  const byId = indexById(set);
+  for (const it of s.items) {
+    const n = byId.get(it.id).options.length;
+    it.struck = Array.isArray(it.struck) ? [...new Set(it.struck.filter((v) => Number.isInteger(v) && v >= 0 && v < n))].sort((a, b) => a - b) : [];
+  }
+  return s;
+}
+
+/* Strikeouts store ORIGINAL option indexes, so they survive option shuffling. */
+export const isStruck = (item, original) => Array.isArray(item.struck) && item.struck.includes(original);
+
+/** Toggle a strike on an original option index. Returns the new state (true = struck). */
+export function toggleStrike(item, original) {
+  const cur = Array.isArray(item.struck) ? item.struck.filter((v) => v !== original) : [];
+  const on = !isStruck(item, original);
+  item.struck = on ? [...cur, original].sort((a, b) => a - b) : cur;
+  return on;
+}
+
+/** Remove a strike (e.g. when the option is selected). Returns true if one was removed. */
+export function clearStrike(item, original) {
+  if (!isStruck(item, original)) return false;
+  item.struck = item.struck.filter((v) => v !== original);
+  return true;
 }
 
 export const displayIndexOf = (item, original) => item.order.indexOf(original);

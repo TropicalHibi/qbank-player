@@ -85,9 +85,11 @@ try {
       await page.waitForSelector('dialog.lightbox', { state: 'detached' });
       log('image lightbox opens and closes with Esc');
     }
+    assert.equal(await page.$$eval('.strike-btn', (x) => x.length), await page.$$eval('.options .option', (x) => x.length), 'strike button per option');
     // Pick B on odd questions, the shown correct one is unknown, so just choose by key.
     await page.keyboard.press(i % 2 ? 'b' : '1');
     await page.waitForSelector('.feedback');
+    assert.equal(await page.$('.strike-btn'), null, 'strikes are read-only once a tutor answer is locked');
     const nOpts = await page.$$eval('.options .option', (x) => x.length);
     const nExpl = await page.$$eval('.options .explanation', (x) => x.length);
     assert.equal(nExpl, nOpts, 'every option shows an explanation');
@@ -160,11 +162,31 @@ try {
   await page.click('button[type=submit]:has-text("Start")');
   await page.waitForSelector('.question-card');
   assert.match(await page.textContent('.timer'), /left$/);
+  const opt = (d) => `.question-card button.option[data-display="${d}"]`;
+  const struckDisplays = () => page.$$eval('.question-card button.option.struck', (x) => x.map((b) => +b.dataset.display));
+  await page.click('.strike-btn[data-display="3"]');
+  assert.deepEqual(await struckDisplays(), [3]);
+  assert.equal(await page.getAttribute('.strike-btn[data-display="3"]', 'aria-pressed'), 'true');
+  assert.equal(await page.getAttribute('.strike-btn[data-display="3"]', 'aria-label'), 'Strike out option D');
+  assert.match(await page.textContent(opt(3)), /\(struck out\)/);
+  await page.click(opt(0), { button: 'right' });
+  assert.deepEqual(await struckDisplays(), [0, 3], 'right-click strikes');
+  assert.equal(await page.$('.option.selected'), null, 'right-click does not select');
+  await page.keyboard.press('Shift+B');
+  assert.deepEqual(await struckDisplays(), [0, 1, 3], 'Shift+letter strikes');
+  await page.keyboard.press('Shift+Digit2');
+  assert.deepEqual(await struckDisplays(), [0, 3], 'Shift+number toggles back');
+  await page.keyboard.press('Shift+C');
+  assert.deepEqual(await struckDisplays(), [0, 2, 3]);
+  assert.equal(await page.getAttribute('.flag-btn', 'aria-pressed'), 'false', 'Shift+letter is not a shortcut for anything else');
+  log('strike via button, right-click, Shift+letter and Shift+number');
   await page.keyboard.press('2');
   assert.ok(await page.$('.option.selected'));
   assert.equal(await page.$('.feedback'), null, 'no feedback in exam mode');
-  await page.keyboard.press('3'); // change answer
+  await page.keyboard.press('3'); // change answer (C was struck)
   assert.equal(await page.$$eval('.option.selected', (x) => x.length), 1);
+  assert.deepEqual(await struckDisplays(), [0, 3], 'selecting a struck option clears its strike');
+  log('selecting a struck option selects it and clears the strike');
   await page.keyboard.press('f');
   assert.equal(await page.getAttribute('.flag-btn', 'aria-pressed'), 'true');
   await page.keyboard.press('ArrowRight');
@@ -184,6 +206,10 @@ try {
   await page.click('dialog.modal button:has-text("Submit")');
   await page.waitForSelector('#results-title');
   assert.match(await page.textContent('#view-results header p'), /Exam mode/);
+  await page.click('.review-item >> nth=0');
+  await page.waitForSelector('.review-item[open] .review-body .option');
+  assert.equal(await page.$$eval('.review-item[open] .option.static.struck', (x) => x.length), 2, 'review shows strikes');
+  assert.equal(await page.$('.review-item .strike-btn'), null, 'review strikes are read-only');
   await page.click('.review-filter button:has-text("Flagged")');
   assert.equal(await page.$$eval('.review-list > li:not([hidden])', (x) => x.length), 1);
   log('exam mode: change answer, flag, navigate, confirm-submit modal, results');
@@ -191,15 +217,42 @@ try {
   /* ---------- resume after refresh ---------- */
   await page.click('button:has-text("Retake all")');
   await page.waitForSelector('.question-card');
+  await page.keyboard.press('Shift+D');
   await page.keyboard.press('a');
   await page.reload();
   await page.waitForSelector('.resume-card');
   assert.match(await page.textContent('.resume-card'), /1 of 5 answered/);
   await page.click('.resume-card button:has-text("Resume")');
   await page.waitForSelector('.question-card');
-  log('progress survives refresh and resumes');
+  assert.deepEqual(await struckDisplays(), [3], 'strike survives refresh');
+  log('progress and strikes survive refresh and resume');
   await page.click('button:has-text("Save & exit")');
   await page.waitForSelector('.resume-card');
+
+  /* ---------- touch long-press strikes without selecting ---------- */
+  {
+    const t = await browser.newContext({ ...devices['Pixel 7'] });
+    const tp = await t.newPage();
+    tp.on('pageerror', (e) => problems.push(`pageerror (touch): ${e.message}`));
+    await tp.goto(site + '?set=sets/example.json');
+    await tp.waitForSelector('#start-title');
+    await tp.click('button[type=submit]:has-text("Start")');
+    await tp.waitForSelector('.question-card');
+    const box = await tp.locator('.question-card button.option[data-display="1"]').boundingBox();
+    const cdp = await t.newCDPSession(tp);
+    const pt = [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }];
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt });
+    await tp.waitForTimeout(800);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await tp.waitForTimeout(150);
+    assert.deepEqual(await tp.$$eval('.question-card button.option.struck', (x) => x.map((b) => +b.dataset.display)), [1], 'long-press strikes');
+    assert.equal(await tp.$('.feedback'), null, 'long-press does not select');
+    await tp.tap('.question-card button.option[data-display="1"]');
+    await tp.waitForSelector('.feedback');
+    assert.equal(await tp.$('.question-card .option.struck'), null, 'tapping a struck option selects it and clears the strike');
+    await t.close();
+    log('touch long-press strikes without selecting');
+  }
 
   /* ---------- paste: repaired + broken ---------- */
   await page.goto(site);
