@@ -1073,6 +1073,40 @@ button.option {
 .callout-label::before {
   content: '◆ ';
 }
+/* Overall question explanation (renderExplanation in js/render.js) */
+.q-explanation {
+  max-width: var(--measure);
+  margin: 1.25rem 0 0;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  background: var(--surface-2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.q-explanation-title {
+  margin: 0 0 0.3rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text);
+}
+.expl-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+.expl-images .q-image {
+  margin: 0;
+  background: var(--surface);
+}
+.expl-images .q-image img {
+  max-height: 160px;
+}
+.expl-image-failed {
+  margin: 0;
+  font-size: 0.875rem;
+}
 .q-meta {
   margin-top: 1rem;
   display: flex;

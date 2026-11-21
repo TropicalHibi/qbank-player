@@ -134,6 +134,9 @@ try {
   await page.click('button[type=submit]:has-text("Start")');
   await page.waitForSelector('.question-card');
   let sawImage = false;
+  let explSeen = 0;
+  let noExplSeen = 0;
+  const EXPL_STEM = 'ischemic cardiomyopathy'; // q1 in sets/example.json has explanation + explanationImages
   for (let i = 0; i < 5; i++) {
     const hasImg = await page.$('.q-image');
     if (hasImg && !sawImage) {
@@ -183,6 +186,35 @@ try {
     assert.ok(await page.$('.callout.discriminator'), 'discriminator shown');
     assert.ok(await page.$('.q-meta .tag'), 'tags shown after answering');
     assert.equal(await page.$$eval('.option.correct .opt-mark', (x) => x[0].textContent), '✓');
+    if ((await page.textContent('.question-card .stem')).includes(EXPL_STEM)) {
+      // Overall explanation: after the option explanations, before the Key distinction callout.
+      const qNum = (await page.textContent('.question-card h2')).match(/Question (\d+) of/)[1];
+      assert.equal(await page.textContent('.question-card .q-explanation h3'), 'Explanation');
+      assert.match(await page.textContent('.question-card .q-explanation .prose'), /hyperkalemia/);
+      assert.equal(await page.$eval('.question-card .q-explanation strong', (x) => x.textContent), 'hyperkalemia', 'md-lite formatting');
+      assert.deepEqual(
+        await page.$$eval('.question-card > *', (xs) => xs.map((x) => x.className).filter((c) => /^(options|q-explanation|callout)/.test(c))),
+        ['options revealed', 'q-explanation', 'callout discriminator'],
+        'explanation sits between the options and the Key distinction'
+      );
+      const img = await page.$('.question-card .q-explanation img');
+      assert.equal(await img.getAttribute('alt'), `Explanation image 1 for question ${qNum}`);
+      assert.equal(await img.getAttribute('loading'), 'lazy');
+      assert.equal(await img.getAttribute('referrerpolicy'), 'no-referrer');
+      await a11y('quiz-tutor-explanation');
+      await page.click('.question-card .q-explanation .expl-image');
+      await page.waitForSelector('dialog.lightbox[open]');
+      assert.equal(await page.getAttribute('dialog.lightbox img', 'alt'), `Explanation image 1 for question ${qNum}`);
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('dialog.lightbox', { state: 'detached' });
+      await page.evaluate(() => document.activeElement?.blur()); // focus returned to the thumbnail; Enter must go to Next
+      explSeen++;
+      log('tutor feedback shows the Explanation section; its image opens in the lightbox');
+    } else {
+      assert.equal(await page.$('.question-card .q-explanation'), null, 'no Explanation section without explanation');
+      assert.equal(await page.$('.question-card h3:has-text("Explanation")'), null, 'no Explanation heading without explanation');
+      noExplSeen++;
+    }
     if (i === 1) {
       // Jump back to Q1 via navigator (read-only), Q3+ must be locked.
       assert.equal(await page.isDisabled('.nav-cell >> nth=2'), false, 'next unanswered question reachable');
@@ -204,6 +236,7 @@ try {
     await page.keyboard.press('Enter');
   }
   await page.waitForSelector('#results-title');
+  assert.deepEqual([explSeen, noExplSeen], [1, 4], 'one question with an explanation, four without');
   log('tutor mode: answered all 5, results shown');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, 'no horizontal overflow on results');
   const scoreText = await page.textContent('.stat .value');
@@ -214,6 +247,21 @@ try {
   await page.waitForSelector('.review-item[open] .review-body .explanation');
   await shot('results');
   await a11y('results');
+  {
+    const explItem = page.locator('.review-item', { has: page.locator('.r-snippet', { hasText: EXPL_STEM }) });
+    if (!(await explItem.evaluate((d) => d.open))) await explItem.locator('summary').click();
+    await explItem.locator('.review-body .q-explanation').waitFor();
+    assert.equal(await explItem.locator('.q-explanation h3').textContent(), 'Explanation');
+    assert.match(await explItem.locator('.q-explanation img').getAttribute('alt'), /^Explanation image 1 for question \d$/);
+    await page.evaluate(() => document.querySelectorAll('.review-item[open]').forEach((d) => d.querySelector('.q-explanation') || (d.open = false)));
+    await a11y('results-explanation');
+    await explItem.evaluate((d) => (d.open = false));
+    const others = page.locator('.review-item', { hasNot: page.locator('.r-snippet', { hasText: EXPL_STEM }) }).first();
+    if (!(await others.evaluate((d) => d.open))) await others.locator('summary').click();
+    await others.locator('.review-body .option').first().waitFor();
+    assert.equal(await others.locator('.q-explanation').count(), 0, 'review: no Explanation section without explanation');
+    log('results review shows the Explanation section (and none where absent)');
+  }
 
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Export results")')]);
   assert.match(dl.suggestedFilename(), /^example-mixed-step-1-systems-results-\d{4}-\d{2}-\d{2}-\d{4}\.json$/);
@@ -274,6 +322,7 @@ try {
   await page.keyboard.press('2');
   assert.ok(await page.$('.option.selected'));
   assert.equal(await page.$('.feedback'), null, 'no feedback in exam mode');
+  assert.equal(await page.$('.q-explanation'), null, 'no explanation in exam mode before results');
   await page.keyboard.press('3'); // change answer (C was struck)
   assert.equal(await page.$$eval('.option.selected', (x) => x.length), 1);
   assert.deepEqual(await struckDisplays(), [0, 3], 'selecting a struck option clears its strike');
@@ -500,6 +549,41 @@ try {
   log('create page: prompt fills, copies, schema downloads, example copies');
   await shot('create');
   await a11y('create');
+
+  /* ---------- explanation renderer edge cases (sets that skipped validation) ---------- */
+  {
+    const r = await page.evaluate(async () => {
+      const { renderExplanation } = await import('./js/render.js');
+      const none = [
+        renderExplanation({}, 1),
+        renderExplanation({ explanation: '   ' }, 1),
+        renderExplanation({ explanation: '', explanationImages: [] }, 1),
+        renderExplanation({ explanation: ' ', explanationImages: ['javascript:alert(1)', 'vbscript:x', 42] }, 1),
+      ].map((x) => x === null);
+      const pix = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+      const onlyImg = renderExplanation({ explanationImages: ['javascript:alert(1)', pix] }, 7);
+      const broken = renderExplanation({ explanation: 'x', explanationImages: ['data:image/png;base64,AAAA'] }, 3);
+      document.body.prepend(broken);
+      await new Promise((res) => setTimeout(res, 300));
+      const out = {
+        none,
+        onlyImgHeading: onlyImg.querySelector('h3')?.textContent,
+        onlyImgProse: !!onlyImg.querySelector('.prose'),
+        onlyImgAlts: [...onlyImg.querySelectorAll('img')].map((i) => i.alt),
+        brokenNote: broken.querySelector('.expl-image-failed')?.textContent,
+        brokenImgs: broken.querySelectorAll('img').length,
+      };
+      broken.remove();
+      return out;
+    });
+    assert.deepEqual(r.none, [true, true, true, true], 'missing/blank explanation and no safe images renders nothing');
+    assert.equal(r.onlyImgHeading, 'Explanation', 'images without text still get the heading');
+    assert.equal(r.onlyImgProse, false);
+    assert.deepEqual(r.onlyImgAlts, ['Explanation image 1 for question 7'], 'unsafe URL skipped silently');
+    assert.equal(r.brokenNote, 'Image failed to load');
+    assert.equal(r.brokenImgs, 0, 'broken image replaced by the note');
+    log('explanation: blank renders nothing, unsafe URLs skipped, broken image shows a note');
+  }
 
   /* ---------- dark mode + mobile ---------- */
   await page.click('#theme-toggle');
