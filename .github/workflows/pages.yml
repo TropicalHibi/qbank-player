@@ -26,7 +26,9 @@ jobs:
         with:
           node-version: 20
       - name: Validate sets and run unit tests
-        run: node tests/validate.test.mjs
+        run: |
+          node tests/validate.test.mjs
+          node tests/setops.test.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
