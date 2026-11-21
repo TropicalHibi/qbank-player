@@ -160,7 +160,7 @@ js/create.js              create page (tab registry; manual builder slot)
 js/util.js                seeded shuffle, slug, hash, markdown-lite renderer, URL allowlist
 schema.json               JSON Schema (must equal the copy in js/prompt.js; a test enforces it)
 tests/validate.test.mjs   unit tests + validation of every bundled set (no deps)
-tests/smoke.mjs           Playwright end-to-end smoke test (local only)
+tests/smoke.mjs           Playwright end-to-end smoke test + axe-core accessibility scans (local only)
 ```
 
 ```bash
@@ -168,10 +168,11 @@ node tests/validate.test.mjs
 ```
 
 ```bash
+npm install   # once: dev-only axe-core for the accessibility scans
 node tests/smoke.mjs --screenshots
 ```
 
-The second command needs Playwright and Chromium available. It serves the site under `/qbank-player/` to mimic GitHub Pages; with `--screenshots` it also refreshes the images in `docs/screenshots/`.
+The second command needs Playwright and Chromium available. It also scans each view in light and dark themes with axe-core and fails on serious or critical accessibility violations. axe-core is a devDependency injected by the test; the site never loads it. It serves the site under `/qbank-player/` to mimic GitHub Pages; with `--screenshots` it also refreshes the images in `docs/screenshots/`.
 
 ### Deployment
 

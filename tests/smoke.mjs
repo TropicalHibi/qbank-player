@@ -56,11 +56,69 @@ const shot = async (name, p = page) => {
 };
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
 
+/* ---------- accessibility scan (axe-core, dev-only) ----------
+   axe-core is a devDependency injected by Playwright; the site never loads it.
+   Each scan runs in the current theme and again in the other one. serious/critical
+   violations fail the run; moderate/minor are printed as warnings. */
+let AXE;
+try {
+  AXE = require.resolve('axe-core/axe.min.js');
+} catch {
+  console.error('axe-core not found: run `npm install` once before `npm run smoke`.');
+  process.exit(1);
+}
+// Known issues, to be emptied by the remaining #17 sub-issues. Each entry is
+// { rule, views?, targets?, reason }: omitting `views` allows the rule in every view,
+// omitting `targets` allows it on every element. Remove an entry once it is fixed.
+const A11Y_ALLOW = [
+  // "Copied ✓" state: .btn.is-copied sets green text but .btn-primary keeps the accent background.
+  { rule: 'color-contrast', views: ['create'], targets: ['#copy-prompt'], reason: '#29 contrast audit' },
+];
+const a11yFailures = [];
+const a11yWarnings = new Map(); // "rule (impact)" -> Set of "view/theme"
+const allowEntry = (a, rule, view, target) => a.rule === rule && (!a.views || a.views.includes(view)) && (!a.targets || a.targets.includes(target));
+const allowed = (rule, view, target) => A11Y_ALLOW.some((a) => allowEntry(a, rule, view, target));
+const a11y = async (view, p = page) => {
+  if (!(await p.evaluate(() => !!window.axe))) await p.addScriptTag({ path: AXE });
+  const start = await p.evaluate(() => {
+    const r = document.documentElement;
+    return r.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  });
+  for (const theme of [start, start === 'dark' ? 'light' : 'dark']) {
+    const violations = await p.evaluate(async (theme) => {
+      const r = document.documentElement;
+      const style = document.createElement('style');
+      style.textContent = '*, *::before, *::after { transition: none !important; animation: none !important; }';
+      document.head.append(style);
+      r.setAttribute('data-theme', theme);
+      try {
+        const res = await window.axe.run(document, { resultTypes: ['violations'] });
+        return res.violations.map((v) => ({ id: v.id, impact: v.impact, help: v.help, targets: v.nodes.map((n) => n.target.join(' ')) }));
+      } finally {
+        style.remove();
+      }
+    }, theme);
+    const where = `${view}/${theme}`;
+    for (const v of violations) {
+      const blocking = v.impact === 'serious' || v.impact === 'critical';
+      const failing = blocking ? v.targets.filter((t) => !allowed(v.id, view, t)) : [];
+      if (failing.length) a11yFailures.push(`${where}: [${v.impact}] ${v.id}: ${v.help} (${failing.length}×: ${failing.slice(0, 5).join(', ')})`);
+      if (failing.length === v.targets.length) continue;
+      const key = `${v.id} (${v.impact}${blocking ? ', allowlisted' : ''})`;
+      if (!a11yWarnings.has(key)) a11yWarnings.set(key, new Set());
+      a11yWarnings.get(key).add(where);
+    }
+  }
+  // Restore the theme the app had (attribute only; the saved pref is untouched).
+  await p.evaluate((t) => document.documentElement.setAttribute('data-theme', t), start);
+};
+
 try {
   /* ---------- library ---------- */
   await page.goto(site);
   await page.waitForSelector('#bundled-list a.set-title');
   log('library lists bundled set');
+  await a11y('library');
   await shot('library');
 
   await page.click('#bundled-list a.btn:has-text("Open")');
@@ -69,6 +127,7 @@ try {
   assert.equal(await page.textContent('#start-title'), 'Example: Mixed Step 1 Systems');
   assert.ok(!/\bnull\b|undefined/.test(await page.textContent('#view-start')), 'no stray null/undefined text');
   log('?set= link opens start screen');
+  await a11y('start');
   await shot('start');
 
   /* ---------- tutor run ---------- */
@@ -81,6 +140,7 @@ try {
       sawImage = true;
       await hasImg.click();
       await page.waitForSelector('dialog.lightbox[open]');
+      await a11y('lightbox');
       await page.keyboard.press('Escape');
       await page.waitForSelector('dialog.lightbox', { state: 'detached' });
       log('image lightbox opens and closes with Esc');
@@ -137,7 +197,10 @@ try {
       assert.equal(await page.textContent('.question-card .options'), before);
       log('tutor navigator: answered questions reachable, future locked');
     }
-    if (i === 2) await shot('tutor-feedback');
+    if (i === 2) {
+      await shot('tutor-feedback');
+      await a11y('quiz-tutor-feedback');
+    }
     await page.keyboard.press('Enter');
   }
   await page.waitForSelector('#results-title');
@@ -150,6 +213,7 @@ try {
   await page.click('.review-item >> nth=0');
   await page.waitForSelector('.review-item[open] .review-body .explanation');
   await shot('results');
+  await a11y('results');
 
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Export results")')]);
   assert.match(dl.suggestedFilename(), /^example-mixed-step-1-systems-results-\d{4}-\d{2}-\d{2}-\d{4}\.json$/);
@@ -222,9 +286,11 @@ try {
   await page.keyboard.press('c');
   await page.keyboard.press('ArrowLeft');
   await shot('exam');
+  await a11y('quiz-exam');
   await page.click('button:has-text("Submit…")');
   await page.waitForSelector('dialog.modal[open]');
   assert.match(await page.textContent('dialog.modal'), /answered 3 of 5/);
+  await a11y('modal');
   await page.keyboard.press('Escape');
   await page.waitForSelector('dialog.modal', { state: 'detached' });
   assert.ok(await page.$('.question-card'), 'Esc cancels submit');
@@ -433,6 +499,7 @@ try {
   JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
   log('create page: prompt fills, copies, schema downloads, example copies');
   await shot('create');
+  await a11y('create');
 
   /* ---------- dark mode + mobile ---------- */
   await page.click('#theme-toggle');
@@ -454,6 +521,9 @@ try {
     await m.close();
   }
 
+  for (const [rule, where] of a11yWarnings) console.warn(`  a11y warning: ${rule} in ${[...where].join(', ')}`);
+  assert.deepEqual(a11yFailures, [], 'no serious/critical accessibility violations:\n' + a11yFailures.join('\n'));
+  log('accessibility scans: no serious/critical violations (light + dark)');
   assert.deepEqual(problems, [], 'no console errors');
   console.log(`\nSmoke test passed (${step} steps).`);
 } catch (e) {

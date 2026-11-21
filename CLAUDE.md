@@ -8,7 +8,7 @@ A static, vanilla-JS web app that plays board-style (USMLE Step 1 / COMLEX Level
 
 ## Hard rules
 
-- **No frameworks, bundlers, CDNs, runtime npm dependencies, or build step.** Use plain HTML, CSS and ES modules. `package.json` exists only so Node treats `.js` as ESM and to hold script aliases.
+- **No frameworks, bundlers, CDNs, runtime npm dependencies, or build step.** Use plain HTML, CSS and ES modules. `package.json` exists only so Node treats `.js` as ESM, to hold script aliases, and to hold dev-only test tools (currently `axe-core` for the smoke test). The site never loads anything from `node_modules/`.
 - **Relative paths only** (`./`, `css/…`, `js/…`, `sets/…`), never a leading `/`, because the site is served under `/qbank-player/`.
 - Serve the site over HTTP (`python3 -m http.server 8000`). ES modules don't load from `file://`.
 - No external requests, analytics or trackers. The site must work offline once loaded.
@@ -39,7 +39,8 @@ node tests/validate.test.mjs
 node tests/smoke.mjs
 ```
 
-- `validate.test.mjs` has no dependencies and runs in CI. `smoke.mjs` is local only: it needs Playwright and Chromium, and it serves the site under `/qbank-player/`.
+- `validate.test.mjs` has no dependencies and runs in CI. `smoke.mjs` is local only: it needs Playwright and Chromium plus `npm install` once (for the `axe-core` devDependency), and it serves the site under `/qbank-player/`.
+- `smoke.mjs` runs an axe-core accessibility scan (`a11y(view)`) on every main view, the modal and the lightbox, in light and dark themes. `serious` and `critical` violations fail the run; `moderate` ones are printed as warnings. Call `a11y()` on any new view or dialog you add. Don't add to `A11Y_ALLOW` to get a PR green; fix the issue, or allowlist it only with a linked issue.
 - Add tests for new behavior: unit tests for the DOM-free modules, smoke-test steps for UI flows.
 - Adding a set means putting the file in `sets/` and adding a matching entry (same `title` and `count`) to `sets/index.json`. The tests check both.
 - Don't re-commit `docs/screenshots/` unless the UI change affects what the README shows. To refresh them, run `node tests/smoke.mjs --screenshots`.
@@ -67,4 +68,4 @@ DOM-free (also run under Node and are unit-tested): `util.js`, `validate.js`, `l
 Other files:
 - `schema.json`: JSON Schema draft 2020-12 for sets.
 - `sets/index.json`: manifest of bundled sets (`[{file, title, count}]`).
-- `tests/`: `validate.test.mjs` (unit tests plus validation of every set) and `smoke.mjs` (Playwright end-to-end run).
+- `tests/`: `validate.test.mjs` (unit tests plus validation of every set) and `smoke.mjs` (Playwright end-to-end run with axe-core accessibility scans).
