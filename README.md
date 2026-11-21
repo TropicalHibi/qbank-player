@@ -2,8 +2,9 @@
 
 A static, framework-free web app for playing board-style (USMLE Step 1 / COMLEX Level 1) single-best-answer question sets stored as JSON files. You can generate those sets with Claude (or another LLM) using a prompt the site gives you.
 
-- **Tutor mode**: right after each answer you see whether it was correct, an explanation for every option, the key distinction being tested, the question's tags and its source.
+- **Tutor mode**: pick an option, then press **Submit answer** (or `Enter`) to lock it in; you can change your pick until you submit. Right after submitting you see whether it was correct, an explanation for every option, the key distinction being tested, the question's tags and its source.
 - **Exam mode**: no feedback until the end. You can move between questions, flag them, and change answers until you submit. An optional block timer is available.
+- **Strike out options** in either mode to rule them out: use the strike button at the right of each option, right-click it, long-press it on touch screens, or press `Shift` with its letter. A struck option can still be selected, which removes the strike. Strikes are saved with your progress, shown in the results review, and don't affect scoring.
 - **Results**: score and timing, a per-tag breakdown (weakest first), a review list you can filter to missed or flagged questions, buttons to redo missed, redo flagged or retake all, a JSON export, and a "Copy summary for Claude" button for requesting a targeted follow-up set.
 - Plain HTML, CSS and ES modules. No build step, no dependencies, no CDNs, no trackers. Works offline once loaded.
 
@@ -38,8 +39,9 @@ After a set loads you pick the mode, timer, shuffling, a tag filter (or **Missed
 
 | Key | Action |
 |---|---|
-| `A`–`H` or `1`–`8` | Select an option. `F` is the flag key, so use `6` for option F |
-| `Enter` | Next question, or Finish / Submit on the last one |
+| `A`–`H` or `1`–`8` | Select an option. `F` is the flag key, so use `6` for option F. In tutor mode this only marks your pick; it isn't graded until you submit |
+| `Enter` | Tutor mode: submit the selected answer, then go to the next question. Exam mode: next question. Finish / Submit on the last one |
+| `Shift` + `A`–`H` or `1`–`8` | Strike out an option, or restore it |
 | `F` | Flag or unflag the question |
 | `←` / `→` | Previous / next. In tutor mode you can only go back to answered questions |
 | `Esc` | Close a dialog or the image viewer |

@@ -3,6 +3,9 @@
 //
 // Responses always store ORIGINAL option indexes (`chosen`), so scoring never depends
 // on display order. `item.order[displayIndex] === originalIndex`.
+//
+// `pending` (tutor mode) is an original index the user has picked but not yet submitted.
+// It never counts as an answer: only `chosen` is used for scoring and progress.
 
 import { mergeRanges, shuffle, mulberry32, randomSeed, hashString, slug, fileTimestamp, truncate, stripMarkdown, formatDuration, LETTERS } from './util.js';
 
@@ -84,7 +87,7 @@ export function buildSession(set, o = {}) {
   if (count && count > 0 && count < chosen.length) chosen = chosen.slice(0, count);
   const items = chosen.map((id) => {
     const base = byId.get(id).options.map((_, i) => i);
-    return { id, order: shuffleOptions ? shuffle(base, rng) : base, chosen: null, timeMs: 0, flagged: false, highlights: [] };
+    return { id, order: shuffleOptions ? shuffle(base, rng) : base, chosen: null, pending: null, timeMs: 0, flagged: false, struck: [], highlights: [] };
   });
   return {
     v: 1,
@@ -119,6 +122,43 @@ export function isSessionValid(set, s) {
 
 /** Highlight ranges for an item; older saved sessions have none, and garbage is dropped. */
 export const itemHighlights = (item) => mergeRanges(item && item.highlights);
+
+/**
+ * Bring a stored session (already checked with isSessionValid) up to the current shape, in place.
+ * Older saves have no `pending`; a missing or out-of-range pending becomes null, and a
+ * pending choice is dropped once the question has been answered.
+ * Older saves have no `struck`; it becomes [], and malformed entries are dropped.
+ * Older saves have no `highlights`; they become [], and ranges are validated and merged.
+ */
+export function normalizeSession(set, s) {
+  const byId = indexById(set);
+  for (const it of s.items) {
+    const n = byId.get(it.id).options.length;
+    const p = it.pending;
+    it.pending = it.chosen === null && Number.isInteger(p) && p >= 0 && p < n ? p : null;
+    it.struck = Array.isArray(it.struck) ? [...new Set(it.struck.filter((v) => Number.isInteger(v) && v >= 0 && v < n))].sort((a, b) => a - b) : [];
+    it.highlights = mergeRanges(it.highlights);
+  }
+  return s;
+}
+
+/* Strikeouts store ORIGINAL option indexes, so they survive option shuffling. */
+export const isStruck = (item, original) => Array.isArray(item.struck) && item.struck.includes(original);
+
+/** Toggle a strike on an original option index. Returns the new state (true = struck). */
+export function toggleStrike(item, original) {
+  const cur = Array.isArray(item.struck) ? item.struck.filter((v) => v !== original) : [];
+  const on = !isStruck(item, original);
+  item.struck = on ? [...cur, original].sort((a, b) => a - b) : cur;
+  return on;
+}
+
+/** Remove a strike (e.g. when the option is selected). Returns true if one was removed. */
+export function clearStrike(item, original) {
+  if (!isStruck(item, original)) return false;
+  item.struck = item.struck.filter((v) => v !== original);
+  return true;
+}
 
 export const displayIndexOf = (item, original) => item.order.indexOf(original);
 export const letterFor = (item, original) => (original == null ? '—' : LETTERS[item.order.indexOf(original)] ?? '?');
