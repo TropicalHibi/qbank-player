@@ -70,10 +70,7 @@ try {
 // Known issues, to be emptied by the remaining #17 sub-issues. Each entry is
 // { rule, views?, targets?, reason }: omitting `views` allows the rule in every view,
 // omitting `targets` allows it on every element. Remove an entry once it is fixed.
-const A11Y_ALLOW = [
-  // "Copied ✓" state: .btn.is-copied sets green text but .btn-primary keeps the accent background.
-  { rule: 'color-contrast', views: ['create'], targets: ['#copy-prompt'], reason: '#29 contrast audit' },
-];
+const A11Y_ALLOW = [];
 const a11yFailures = [];
 const a11yWarnings = new Map(); // "rule (impact)" -> Set of "view/theme"
 const allowEntry = (a, rule, view, target) => a.rule === rule && (!a.views || a.views.includes(view)) && (!a.targets || a.targets.includes(target));
@@ -334,6 +331,12 @@ try {
   await page.click('.nav-cell >> nth=4');
   await page.keyboard.press('c');
   await page.keyboard.press('ArrowLeft');
+  // Answered cells carry a dot as well as the fill, so the state isn't color-only (#29).
+  const answeredMarks = await page.$$eval('.nav-cell', (cells) =>
+    cells.map((c) => c.classList.contains('answered') && getComputedStyle(c, '::after').content.startsWith('"●"'))
+  );
+  assert.deepEqual(answeredMarks, [true, true, false, false, true], 'answered navigator cells show a non-color marker');
+  log('exam navigator: answered cells marked with a dot, not color alone');
   await shot('exam');
   await a11y('quiz-exam');
   await page.click('button:has-text("Submit…")');

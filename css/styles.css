@@ -8,23 +8,23 @@
   --text: #1b1f24;
   --muted: #5b6573;
   --border: #d6dbe1;
-  --border-strong: #aab3bf;
+  --border-strong: #7c8696;
   --accent: #1f5fbf;
   --accent-hover: #194f9f;
   --accent-contrast: #ffffff;
   --accent-soft: #e6eefb;
   --correct: #17733a;
   --correct-bg: #e5f4ea;
-  --correct-border: #5fb07d;
+  --correct-border: #4b9868;
   --incorrect: #b3261e;
   --incorrect-bg: #fbe9e7;
-  --incorrect-border: #e08a82;
+  --incorrect-border: #d66459;
   --warn: #7a5300;
   --warn-bg: #fff6dd;
-  --warn-border: #e8c46a;
+  --warn-border: #b2871b;
   --callout-bg: #fff8e1;
   --callout-border: #e0b84a;
-  --flag: #c25e00;
+  --flag: #a65000;
   --focus: #2b7de9;
   --shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 1px 3px rgb(16 24 40 / 0.08);
   --radius: 10px;
@@ -48,7 +48,7 @@
     --text: #e6e9ee;
     --muted: #9aa4b2;
     --border: #333a44;
-    --border-strong: #4f5967;
+    --border-strong: #687384;
     --accent: #6ea8ff;
     --accent-hover: #8cbaff;
     --accent-contrast: #0b1320;
@@ -58,10 +58,10 @@
     --correct-border: #2f7a4a;
     --incorrect: #ff8a80;
     --incorrect-bg: #3a1a18;
-    --incorrect-border: #8f3b34;
+    --incorrect-border: #b5524a;
     --warn: #f3cf74;
     --warn-bg: #2f2710;
-    --warn-border: #6d5719;
+    --warn-border: #85691e;
     --callout-bg: #2b2512;
     --callout-border: #7a6420;
     --flag: #ffaa5c;
@@ -77,7 +77,7 @@
   --text: #e6e9ee;
   --muted: #9aa4b2;
   --border: #333a44;
-  --border-strong: #4f5967;
+  --border-strong: #687384;
   --accent: #6ea8ff;
   --accent-hover: #8cbaff;
   --accent-contrast: #0b1320;
@@ -87,10 +87,10 @@
   --correct-border: #2f7a4a;
   --incorrect: #ff8a80;
   --incorrect-bg: #3a1a18;
-  --incorrect-border: #8f3b34;
+  --incorrect-border: #b5524a;
   --warn: #f3cf74;
   --warn-bg: #2f2710;
-  --warn-border: #6d5719;
+  --warn-border: #85691e;
   --callout-bg: #2b2512;
   --callout-border: #7a6420;
   --flag: #ffaa5c;
@@ -336,6 +336,13 @@ img {
   border-color: var(--correct-border);
   color: var(--correct);
 }
+/* Primary keeps a filled look: green fill, light text (green text on the accent fill was unreadable). */
+.btn-primary.is-copied,
+.btn-primary.is-copied:hover {
+  background: var(--correct);
+  border-color: var(--correct);
+  color: var(--surface);
+}
 .btn-row {
   display: flex;
   flex-wrap: wrap;
@@ -366,6 +373,11 @@ textarea {
   font-size: 0.85rem;
   line-height: 1.45;
   resize: vertical;
+}
+/* Browser default placeholder grey is below 4.5:1; use the muted token instead. */
+::placeholder {
+  color: var(--muted);
+  opacity: 1;
 }
 input[type='range'] {
   width: 100%;
@@ -750,8 +762,18 @@ legend {
   box-shadow: 0 0 0 2px var(--text);
   font-weight: 700;
 }
+/* Exam mode: a dot marks answered cells so the state doesn't rely on the fill color alone. */
+.nav-cell.answered::after {
+  content: '●' / '';
+  position: absolute;
+  bottom: 0;
+  right: 3px;
+  font-size: 0.55rem;
+  line-height: 1.4;
+  color: var(--accent);
+}
 .nav-cell:disabled {
-  opacity: 0.4;
+  opacity: 0.6;
   cursor: not-allowed;
 }
 .nav-cell .flag-dot {
@@ -889,7 +911,7 @@ legend {
   width: 100%;
   min-height: var(--tap);
   padding: 0.65rem 0.8rem;
-  border: 1.5px solid var(--border);
+  border: 1.5px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text);
@@ -901,7 +923,7 @@ button.option {
   cursor: pointer;
 }
 button.option:hover {
-  border-color: var(--border-strong);
+  border-color: var(--muted);
   background: var(--surface-2);
 }
 .revealed button.option {
@@ -1020,7 +1042,7 @@ button.option {
   width: var(--tap);
   min-height: var(--tap);
   padding: 0;
-  border: 1.5px solid var(--border);
+  border: 1.5px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--muted);
@@ -1030,7 +1052,7 @@ button.option {
   -webkit-touch-callout: none;
 }
 .strike-btn:hover {
-  border-color: var(--border-strong);
+  border-color: var(--muted);
   color: var(--text);
 }
 .strike-icon {
@@ -1039,7 +1061,7 @@ button.option {
   font-weight: 600;
 }
 .strike-btn[aria-pressed='true'] {
-  border-color: var(--border-strong);
+  border-color: var(--muted);
   background: var(--surface-2);
   color: var(--text);
   box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.18);
@@ -1436,7 +1458,7 @@ kbd {
 }
 .tab:disabled {
   cursor: not-allowed;
-  opacity: 0.6;
+  opacity: 0.8;
 }
 .gen-grid {
   display: grid;
