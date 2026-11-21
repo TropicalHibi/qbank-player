@@ -236,6 +236,104 @@ try {
   assert.equal(await page.$('.question-card script, .question-card b'), null);
   log('HTML in set content is escaped');
 
+  /* ---------- stem highlighting ---------- */
+  const hlSet = {
+    title: 'Highlight test',
+    version: 1,
+    questions: [
+      {
+        id: 'h1',
+        stem: 'The patient has **severe hypokalemia** and weakness.\n\n| Analyte | Value |\n|---|---|\n| Na | 140 |\n| K | 2.1 |',
+        options: [
+          { text: 'Long option text that the user drags across to select it', explanation: 'e' },
+          { text: 'Second', explanation: 'e' },
+          { text: 'Third', explanation: 'e' },
+          { text: 'Fourth', explanation: 'e' },
+        ],
+        answer: 1,
+      },
+    ],
+  };
+  // Select stem text from the first occurrence of `from` to the end of the first `to` after it.
+  const selectStem = (from, to) =>
+    page.evaluate(
+      ([from, to]) => {
+        const stem = document.querySelector('.question-card .stem');
+        const walker = document.createTreeWalker(stem, NodeFilter.SHOW_TEXT);
+        const nodes = [];
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n);
+        const text = nodes.map((n) => n.data).join('');
+        const s = text.indexOf(from);
+        const e = text.indexOf(to, s) + to.length;
+        const at = (off) => {
+          for (const n of nodes) {
+            if (off <= n.data.length) return [n, off];
+            off -= n.data.length;
+          }
+        };
+        const r = document.createRange();
+        r.setStart(...at(s));
+        r.setEnd(...at(e));
+        const sel = document.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+      },
+      [from, to]
+    );
+  const markTexts = () => page.$$eval('.question-card .stem mark.hl', (m) => m.map((x) => x.textContent));
+  await page.goto(site);
+  await page.fill('#paste-input', JSON.stringify(hlSet));
+  await page.click('#paste-form button[type=submit]');
+  await page.waitForSelector('#start-title');
+  await page.click('button[type=submit]:has-text("Start")');
+  await page.waitForSelector('.question-card .stem strong');
+  assert.equal(await page.isDisabled('button:has-text("Clear highlights")'), true);
+
+  await selectStem('has', 'hypo');
+  await page.waitForSelector('.hl-float:not([hidden])');
+  await page.click('.hl-float');
+  assert.deepEqual(await markTexts(), ['has ', 'severe hypo']);
+  assert.equal(await page.$eval('.stem strong', (s) => s.textContent), 'severe hypokalemia', 'bold span intact');
+  assert.ok(await page.$('.stem strong > mark.hl'), 'mark nested inside the bold span, not across it');
+  assert.equal(await page.isVisible('.hl-float'), false);
+  await selectStem('Na', '140');
+  await page.click('.hl-float');
+  assert.equal(await page.$$eval('.stem td', (x) => x.length), 4, 'table structure intact');
+  assert.equal(await page.$$eval('.stem td > mark.hl', (x) => x.length), 2, 'one mark per table cell');
+  assert.equal(await page.$('.option.selected, .feedback'), null, 'highlighting does not answer');
+  log('highlight across a bold span and table cells');
+
+  await page.reload(); // a pasted set reloads to the Library; resume it from Recent
+  await page.click('#recent-list .set-item:has-text("Highlight test") button:has-text("Resume")');
+  await page.waitForSelector('.question-card .stem mark.hl');
+  assert.deepEqual(await markTexts(), ['has ', 'severe hypo', 'Na', '140']);
+  log('highlights survive a refresh');
+
+  await page.click('.stem mark.hl >> text=severe hypo');
+  assert.deepEqual(await markTexts(), ['Na', '140']);
+  log('clicking a highlight removes it');
+  await selectStem('weak', 'ness');
+  await page.click('.hl-float');
+  assert.equal((await markTexts()).length, 3);
+  await page.click('button:has-text("Clear highlights")');
+  assert.deepEqual(await markTexts(), []);
+  assert.equal(await page.isDisabled('button:has-text("Clear highlights")'), true);
+  log('Clear highlights removes all');
+
+  const optText = await page.$('.option >> nth=0 >> .opt-text');
+  const box = await optText.boundingBox();
+  await page.mouse.move(box.x + 4, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.up();
+  assert.ok((await page.evaluate(() => document.getSelection().toString())).length > 3, 'option text got selected');
+  assert.equal(await page.$('.option.selected, .option.correct, .option.incorrect, .feedback'), null, 'selecting option text does not pick it');
+  assert.equal(await page.isVisible('.hl-float'), false, 'no highlight button for option text');
+  await page.click('.option >> nth=1');
+  await page.waitForSelector('.option.selected'); // the start screen remembered exam mode
+
+  log('selecting option text does not select the option; a click still does');
+
   /* ---------- create page ---------- */
   await page.goto(site + 'create.html');
   await page.fill('#opt-n', '12');

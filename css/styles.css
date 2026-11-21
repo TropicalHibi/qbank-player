@@ -34,6 +34,9 @@
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
   --measure: 70ch;
   --tap: 44px;
+  /* Stem highlights: yellow with dark text in BOTH themes, so contrast holds either way. */
+  --hl-bg: #ffe14d;
+  --hl-text: #1b1f24;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -781,9 +784,46 @@ legend {
 .question-card h2:focus {
   outline: none;
 }
+.q-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+.question-card .q-head h2 {
+  margin-bottom: 0;
+}
+.q-toolbar {
+  display: flex;
+  gap: 0.4rem;
+}
 .stem {
   max-width: var(--measure);
   font-size: 1.05rem;
+}
+.stem mark.hl {
+  background: var(--hl-bg);
+  color: var(--hl-text);
+  border-radius: 2px;
+  cursor: pointer;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.stem mark.hl code {
+  color: inherit;
+  background: transparent;
+}
+.hl-float {
+  position: absolute;
+  z-index: 50;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.25);
+}
+/* Option text is selectable, so a drag over it selects text instead of picking the option. */
+button.option .opt-text {
+  -webkit-user-select: text;
+  user-select: text;
 }
 .prose p:last-child {
   margin-bottom: 0;

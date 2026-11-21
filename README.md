@@ -44,6 +44,10 @@ After a set loads you pick the mode, timer, shuffling, a tag filter (or **Missed
 | `←` / `→` | Previous / next. In tutor mode you can only go back to answered questions |
 | `Esc` | Close a dialog or the image viewer |
 
+### Highlighting
+
+In either mode, select text in the question stem with the mouse or by touch, then tap the **Highlight** button that appears below the selection. Click a highlight to remove it, or use **Clear highlights** above the question. Highlights are saved with your progress and also show in the results review. Selecting text inside an answer option doesn't choose that option.
+
 Progress is saved in your browser after every answer, so a refresh resumes where you left off. Recently opened sets appear in the Library with a **Resume** button.
 
 ## Generating sets with Claude

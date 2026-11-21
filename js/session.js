@@ -4,7 +4,7 @@
 // Responses always store ORIGINAL option indexes (`chosen`), so scoring never depends
 // on display order. `item.order[displayIndex] === originalIndex`.
 
-import { shuffle, mulberry32, randomSeed, hashString, slug, fileTimestamp, truncate, stripMarkdown, formatDuration, LETTERS } from './util.js';
+import { mergeRanges, shuffle, mulberry32, randomSeed, hashString, slug, fileTimestamp, truncate, stripMarkdown, formatDuration, LETTERS } from './util.js';
 
 export const UNTAGGED = '(untagged)';
 
@@ -84,7 +84,7 @@ export function buildSession(set, o = {}) {
   if (count && count > 0 && count < chosen.length) chosen = chosen.slice(0, count);
   const items = chosen.map((id) => {
     const base = byId.get(id).options.map((_, i) => i);
-    return { id, order: shuffleOptions ? shuffle(base, rng) : base, chosen: null, timeMs: 0, flagged: false };
+    return { id, order: shuffleOptions ? shuffle(base, rng) : base, chosen: null, timeMs: 0, flagged: false, highlights: [] };
   });
   return {
     v: 1,
@@ -116,6 +116,9 @@ export function isSessionValid(set, s) {
     return it.chosen === null || (Number.isInteger(it.chosen) && it.chosen >= 0 && it.chosen < q.options.length);
   });
 }
+
+/** Highlight ranges for an item; older saved sessions have none, and garbage is dropped. */
+export const itemHighlights = (item) => mergeRanges(item && item.highlights);
 
 export const displayIndexOf = (item, original) => item.order.indexOf(original);
 export const letterFor = (item, original) => (original == null ? '—' : LETTERS[item.order.indexOf(original)] ?? '?');
