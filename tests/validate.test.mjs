@@ -529,7 +529,7 @@ test('older saved sessions without pending load with pending = null', () => {
 
 /* ---------- confidence ---------- */
 // Imported here (ESM imports are hoisted) to keep this section self-contained.
-import { setConfidence, canSetConfidence, normalizeConfidence, CONFIDENCE_LEVELS } from '../js/session.js';
+import { setConfidence, canSetConfidence, normalizeConfidence, asksConfidence, CONFIDENCE_LEVELS } from '../js/session.js';
 section('Session: confidence');
 const confSet = mkSet([mkQ('c1', { answer: 0 }), mkQ('c2', { answer: 0 }), mkQ('c3', { answer: 0 }), mkQ('c4', { answer: 0 }), mkQ('c5', { answer: 0 })]);
 const confSession = (mode = 'exam') => buildSession(confSet, { mode, seed: 1, shuffleQuestions: false, shuffleOptions: false });
@@ -570,6 +570,18 @@ test('setConfidence: tutor locks on submit, exam locks on finish, bad values ref
   e.finished = true;
   assert.equal(setConfidence(e, 0, 'medium'), false);
   assert.equal(setConfidence(e, 1, 'medium'), false);
+});
+test('askConfidence: on by default, off when asked, older saves default to on', () => {
+  assert.equal(confSession().settings.askConfidence, true);
+  assert.equal(asksConfidence(confSession()), true);
+  const off = buildSession(confSet, { askConfidence: false });
+  assert.equal(off.settings.askConfidence, false);
+  assert.equal(asksConfidence(off), false);
+  const old = JSON.parse(JSON.stringify(confSession()));
+  delete old.settings.askConfidence; // saved by an older version
+  assert.equal(asksConfidence(old), true);
+  delete old.settings;
+  assert.equal(asksConfidence(old), true);
 });
 // c1 high+wrong, c2 high+right, c3 low+right, c4 low+wrong, c5 unrated+unanswered
 const ratedSession = () => {

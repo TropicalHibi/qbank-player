@@ -268,9 +268,41 @@ export function updateStrikes(list, item) {
   }
 }
 
-/** Discriminator callout + tags + source (only shown after answering). */
-export function renderReveal(q) {
+/**
+ * Overall explanation: md-lite text, then `explanationImages` as lightbox thumbnails.
+ * Returns null (nothing rendered) when the text is missing/blank and no image is usable.
+ * Image URLs are re-checked here because a set may reach the renderer without validation.
+ */
+export function renderExplanation(q, number) {
+  const text = typeof q.explanation === 'string' && q.explanation.trim() ? q.explanation : '';
+  const urls = (Array.isArray(q.explanationImages) ? q.explanationImages : []).filter((u) => typeof u === 'string' && isSafeImageUrl(u)).map((u) => u.trim());
+  if (!text && !urls.length) return null;
+  const images = urls.map((src, k) => {
+    const alt = `Explanation image ${k + 1} for question ${number}`;
+    const img = el('img', { src, alt, attrs: { loading: 'lazy', decoding: 'async', referrerpolicy: 'no-referrer' } });
+    const btn = el(
+      'button',
+      { class: 'q-image expl-image', type: 'button', attrs: { 'aria-label': `${alt}. Click to enlarge.` }, on: { click: () => openLightbox(src, alt) } },
+      img,
+      el('span', { class: 'zoom-hint', attrs: { 'aria-hidden': 'true' }, text: '⤢ Enlarge' })
+    );
+    img.addEventListener('error', () => btn.replaceWith(el('p', { class: 'image-blocked expl-image-failed', text: 'Image failed to load' })));
+    return btn;
+  });
+  return el(
+    'div',
+    { class: 'q-explanation' },
+    el('h3', { class: 'q-explanation-title', text: 'Explanation' }),
+    text ? el('div', { class: 'prose', html: renderMarkdownLite(text) }) : null,
+    images.length ? el('div', { class: 'expl-images' }, images) : null
+  );
+}
+
+/** Overall explanation + discriminator callout + tags + source (only shown after answering). */
+export function renderReveal(q, number) {
   const parts = [];
+  const explanation = renderExplanation(q, number);
+  if (explanation) parts.push(explanation);
   if (q.discriminator) {
     parts.push(
       el(
@@ -304,6 +336,6 @@ export function renderReviewBody(q, item, number) {
     renderImage(q, number),
     item.chosen === null ? el('p', { class: 'unanswered-note', text: 'You did not answer this question.' }) : null,
     renderOptions(q, item, { reveal: true, interactive: false }),
-    renderReveal(q)
+    renderReveal(q, number)
   );
 }

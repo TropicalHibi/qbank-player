@@ -156,3 +156,39 @@ export function mergeBackup(current, incoming) {
     sets,
   };
 }
+
+/* ---------- detection & summary (for the Library UI) ---------- */
+
+/**
+ * Does this parsed JSON claim to be a qbank-player backup (`app: "qbank-player"`)? Used to route a
+ * loaded, dropped or pasted file to the restore flow instead of set validation. It may still be
+ * invalid: run validateBackup() before restoring.
+ */
+export const looksLikeBackup = (obj) => isObj(obj) && obj.app === BACKUP_APP;
+
+/**
+ * Counts for the restore dialog and the backup toast. Tolerates malformed input.
+ * `sessions` = saved in-progress sessions (`qbp:progress:*` not finished); `results` = `qbp:last:*`.
+ * @returns {{createdAt: Date|null, sets: number, sessions: number, results: number, recents: number}}
+ */
+export function summarizeBackup(obj) {
+  const ls = isObj(obj?.localStorage) ? obj.localStorage : {};
+  let sessions = 0;
+  let results = 0;
+  for (const [k, v] of Object.entries(ls)) {
+    if (k.startsWith(KEY_PREFIX + 'progress:') && isObj(v) && !v.finished) sessions++;
+    else if (k.startsWith(KEY_PREFIX + 'last:')) results++;
+  }
+  const d = typeof obj?.createdAt === 'string' ? new Date(obj.createdAt) : null;
+  const recents = ls[KEY_PREFIX + 'recents'];
+  return {
+    createdAt: d && !Number.isNaN(d.getTime()) ? d : null,
+    sets: Array.isArray(obj?.sets) ? obj.sets.length : 0,
+    sessions,
+    results,
+    recents: Array.isArray(recents) ? recents.length : 0,
+  };
+}
+
+/** `1 set`, `2 sets`. */
+export const pluralize = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;

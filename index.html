@@ -70,6 +70,23 @@
             <li class="empty">Loading…</li>
           </ul>
         </section>
+
+        <section aria-labelledby="data-title" id="data-section" class="card data-card">
+          <h2 id="data-title">Your data</h2>
+          <p class="muted small" id="data-note">
+            Progress, recent sets and preferences live only in this browser. Back them up to a file to move them to
+            another browser or device, or to keep them safe before clearing site data.
+          </p>
+          <div class="btn-row">
+            <button class="btn" type="button" id="backup-btn" aria-describedby="data-note">Back up</button>
+            <button class="btn" type="button" id="restore-btn" aria-describedby="data-note">Restore…</button>
+            <input type="file" id="restore-input" accept=".json,application/json" class="sr-only" tabindex="-1" aria-hidden="true" />
+          </div>
+          <p class="data-blocked small" id="data-blocked" hidden>
+            Browser storage is blocked or disabled, so there is nothing to back up and nowhere to restore to. Allow
+            site data for this page to use backups.
+          </p>
+        </section>
       </section>
 
       <!-- Start / Quiz / Results are rendered by JS -->
