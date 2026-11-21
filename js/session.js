@@ -6,6 +6,9 @@
 //
 // `pending` (tutor mode) is an original index the user has picked but not yet submitted.
 // It never counts as an answer: only `chosen` is used for scoring and progress.
+//
+// `confidence` is an optional self-rating ('low' | 'medium' | 'high', or null if unrated).
+// It never affects scoring. Set it with setConfidence(), which enforces the lock rules.
 
 import { mergeRanges, shuffle, mulberry32, randomSeed, hashString, slug, fileTimestamp, truncate, stripMarkdown, formatDuration, LETTERS } from './util.js';
 
@@ -87,7 +90,7 @@ export function buildSession(set, o = {}) {
   if (count && count > 0 && count < chosen.length) chosen = chosen.slice(0, count);
   const items = chosen.map((id) => {
     const base = byId.get(id).options.map((_, i) => i);
-    return { id, order: shuffleOptions ? shuffle(base, rng) : base, chosen: null, pending: null, timeMs: 0, flagged: false, struck: [], highlights: [] };
+    return { id, order: shuffleOptions ? shuffle(base, rng) : base, chosen: null, pending: null, timeMs: 0, flagged: false, struck: [], highlights: [], confidence: null };
   });
   return {
     v: 1,
@@ -129,6 +132,7 @@ export const itemHighlights = (item) => mergeRanges(item && item.highlights);
  * pending choice is dropped once the question has been answered.
  * Older saves have no `struck`; it becomes [], and malformed entries are dropped.
  * Older saves have no `highlights`; they become [], and ranges are validated and merged.
+ * Older saves have no `confidence`; a missing or unknown value becomes null.
  */
 export function normalizeSession(set, s) {
   const byId = indexById(set);
@@ -138,8 +142,28 @@ export function normalizeSession(set, s) {
     it.pending = it.chosen === null && Number.isInteger(p) && p >= 0 && p < n ? p : null;
     it.struck = Array.isArray(it.struck) ? [...new Set(it.struck.filter((v) => Number.isInteger(v) && v >= 0 && v < n))].sort((a, b) => a - b) : [];
     it.highlights = mergeRanges(it.highlights);
+    it.confidence = normalizeConfidence(it.confidence);
   }
   return s;
+}
+
+export const CONFIDENCE_LEVELS = ['low', 'medium', 'high'];
+
+/** A valid confidence level, or null. */
+export const normalizeConfidence = (v) => (CONFIDENCE_LEVELS.includes(v) ? v : null);
+
+/** Can this item's confidence still change? Tutor: until the answer is submitted. Exam: until the exam is submitted. */
+export const canSetConfidence = (session, item) => !session.finished && (session.mode === 'exam' || item.chosen === null);
+
+/**
+ * Set (or clear, with null) the confidence rating of session.items[index].
+ * Returns false and changes nothing if the item is locked or the value is not a level or null.
+ */
+export function setConfidence(session, index, value) {
+  const item = session.items[index];
+  if (!item || (value !== null && !CONFIDENCE_LEVELS.includes(value)) || !canSetConfidence(session, item)) return false;
+  item.confidence = value;
+  return true;
 }
 
 /* Strikeouts store ORIGINAL option indexes, so they survive option shuffling. */
@@ -174,6 +198,7 @@ export function scoreSession(set, session) {
       correct: it.chosen !== null && it.chosen === q.answer,
       timeMs: Math.round(it.timeMs || 0),
       flagged: !!it.flagged,
+      confidence: normalizeConfidence(it.confidence),
       tags: questionTags(q).slice(),
     };
   });
@@ -191,6 +216,9 @@ export function scoreSession(set, session) {
   const byTag = [...tagMap.values()]
     .map((e) => ({ ...e, pct: e.total ? e.correct / e.total : 0 }))
     .sort((a, b) => a.pct - b.pct || b.total - a.total || a.tag.localeCompare(b.tag));
+  const confidence = {};
+  for (const k of [...CONFIDENCE_LEVELS, 'unrated']) confidence[k] = { correct: 0, incorrect: 0 };
+  for (const r of responses) confidence[r.confidence ?? 'unrated'][r.correct ? 'correct' : 'incorrect']++;
   const totalMs = Math.round(session.elapsedMs || 0);
   return {
     score,
@@ -202,6 +230,9 @@ export function scoreSession(set, session) {
     byTag,
     missedIds: responses.filter((r) => !r.correct).map((r) => r.id),
     flaggedIds: responses.filter((r) => r.flagged).map((r) => r.id),
+    confidence,
+    confidentWrong: responses.filter((r) => r.confidence === 'high' && !r.correct).map((r) => r.id),
+    luckyRight: responses.filter((r) => r.confidence === 'low' && r.correct).map((r) => r.id),
   };
 }
 
@@ -214,7 +245,7 @@ export function buildExport(set, session, now = new Date()) {
     timestamp: now.toISOString(),
     score: r.score,
     total: r.total,
-    responses: r.responses.map(({ id, chosen, correct, timeMs, flagged, tags }) => ({ id, chosen, correct, timeMs, flagged, tags })),
+    responses: r.responses.map(({ id, chosen, correct, timeMs, flagged, confidence, tags }) => ({ id, chosen, correct, timeMs, flagged, confidence, tags })),
   };
 }
 
@@ -244,6 +275,11 @@ export function buildClaudeSummary(set, session) {
     lines.push(`   Chose: ${chosenText} | Correct: ${stripMarkdown(q.options[q.answer].text)}`);
     if (x.tags.length) lines.push(`   Tags: ${x.tags.join(', ')}`);
   });
+  if (r.confidentWrong.length) {
+    lines.push('');
+    lines.push(`Missed while confident: ${r.confidentWrong.map((id) => `[${id}]`).join(', ')}`);
+    lines.push('   (rated high confidence but wrong — likely misconceptions worth targeting)');
+  }
   lines.push('');
   lines.push(
     'Please write a new question set in the same JSON schema that targets my weak tags and the distinctions I missed, using new vignettes (not rewordings).'

@@ -405,7 +405,7 @@ test('scoring uses original indexes regardless of display order', () => {
   const exp = buildExport(set, s, new Date('2026-03-04T05:06:07Z'));
   assert.deepEqual(Object.keys(exp), ['setTitle', 'setVersion', 'mode', 'timestamp', 'score', 'total', 'responses']);
   assert.equal(exp.timestamp, '2026-03-04T05:06:07.000Z');
-  assert.deepEqual(Object.keys(exp.responses[0]), ['id', 'chosen', 'correct', 'timeMs', 'flagged', 'tags']);
+  assert.deepEqual(Object.keys(exp.responses[0]), ['id', 'chosen', 'correct', 'timeMs', 'flagged', 'confidence', 'tags']);
   assert.equal(exp.responses[3].chosen, null);
   assert.equal(exp.responses[3].correct, false);
   const sum = buildClaudeSummary(set, s);
@@ -525,6 +525,88 @@ test('older saved sessions without pending load with pending = null', () => {
   normalizeSession(set, old);
   assert.ok(old.items.every((it) => it.pending === null));
   assert.equal(old.items[1].chosen, 2);
+});
+
+/* ---------- confidence ---------- */
+// Imported here (ESM imports are hoisted) to keep this section self-contained.
+import { setConfidence, canSetConfidence, normalizeConfidence, CONFIDENCE_LEVELS } from '../js/session.js';
+section('Session: confidence');
+const confSet = mkSet([mkQ('c1', { answer: 0 }), mkQ('c2', { answer: 0 }), mkQ('c3', { answer: 0 }), mkQ('c4', { answer: 0 }), mkQ('c5', { answer: 0 })]);
+const confSession = (mode = 'exam') => buildSession(confSet, { mode, seed: 1, shuffleQuestions: false, shuffleOptions: false });
+test('new items start with confidence null', () => {
+  assert.deepEqual(CONFIDENCE_LEVELS, ['low', 'medium', 'high']);
+  assert.ok(confSession().items.every((it) => it.confidence === null));
+});
+test('normalizeSession: missing or bad confidence becomes null, valid values kept', () => {
+  const s = JSON.parse(JSON.stringify(confSession()));
+  delete s.items[0].confidence; // saved by an older version
+  s.items[1].confidence = 'HIGH';
+  s.items[2].confidence = 3;
+  s.items[3].confidence = 'medium';
+  s.items[4].confidence = 'low';
+  assert.ok(isSessionValid(confSet, s));
+  normalizeSession(confSet, s);
+  assert.deepEqual(s.items.map((it) => it.confidence), [null, null, null, 'medium', 'low']);
+  assert.equal(normalizeConfidence(undefined), null);
+});
+test('setConfidence: tutor locks on submit, exam locks on finish, bad values refused', () => {
+  const t = confSession('tutor');
+  assert.equal(setConfidence(t, 0, 'high'), true);
+  assert.equal(setConfidence(t, 0, 'low'), true);
+  assert.equal(setConfidence(t, 0, 'sure'), false);
+  assert.equal(setConfidence(t, 99, 'low'), false);
+  assert.equal(t.items[0].confidence, 'low');
+  t.items[0].chosen = 1; // submitted
+  assert.equal(canSetConfidence(t, t.items[0]), false);
+  assert.equal(setConfidence(t, 0, 'high'), false);
+  assert.equal(setConfidence(t, 0, null), false);
+  assert.equal(t.items[0].confidence, 'low');
+
+  const e = confSession('exam');
+  e.items[0].chosen = 1;
+  assert.equal(setConfidence(e, 0, 'high'), true);
+  assert.equal(setConfidence(e, 0, null), true);
+  assert.equal(e.items[0].confidence, null);
+  e.finished = true;
+  assert.equal(setConfidence(e, 0, 'medium'), false);
+  assert.equal(setConfidence(e, 1, 'medium'), false);
+});
+// c1 high+wrong, c2 high+right, c3 low+right, c4 low+wrong, c5 unrated+unanswered
+const ratedSession = () => {
+  const s = confSession('exam');
+  const plan = [[1, 'high'], [0, 'high'], [0, 'low'], [2, 'low'], [null, null]];
+  plan.forEach(([chosen, c], i) => {
+    s.items[i].chosen = chosen;
+    setConfidence(s, i, c);
+  });
+  return s;
+};
+test('scoreSession: confidence breakdown and id lists; scoring unaffected', () => {
+  const r = scoreSession(confSet, ratedSession());
+  assert.equal(r.score, 2);
+  assert.deepEqual(r.confidence, {
+    low: { correct: 1, incorrect: 1 },
+    medium: { correct: 0, incorrect: 0 },
+    high: { correct: 1, incorrect: 1 },
+    unrated: { correct: 0, incorrect: 1 },
+  });
+  assert.deepEqual(r.confidentWrong, ['c1']);
+  assert.deepEqual(r.luckyRight, ['c3']);
+  const none = scoreSession(confSet, confSession());
+  assert.deepEqual(none.confidence.unrated, { correct: 0, incorrect: 5 });
+  assert.deepEqual([none.confidentWrong, none.luckyRight], [[], []]);
+});
+test('buildExport includes confidence per response', () => {
+  const exp = buildExport(confSet, ratedSession(), new Date(0));
+  assert.deepEqual(exp.responses.map((x) => x.confidence), ['high', 'high', 'low', 'low', null]);
+  const old = confSession();
+  delete old.items[0].confidence; // unnormalized older item still exports null
+  assert.equal(buildExport(confSet, old).responses[0].confidence, null);
+});
+test('buildClaudeSummary lists high-confidence misses separately', () => {
+  const txt = buildClaudeSummary(confSet, ratedSession());
+  assert.ok(txt.includes('Missed while confident: [c1]'));
+  assert.ok(!buildClaudeSummary(confSet, confSession()).includes('Missed while confident'));
 });
 
 /* ---------- prompt ---------- */

@@ -120,11 +120,13 @@ Unknown fields produce warnings rather than errors, so slightly over-eager LLM o
 {
   "setTitle": "…", "setVersion": 1, "mode": "tutor", "timestamp": "2026-11-20T14:03:00.000Z",
   "score": 7, "total": 10,
-  "responses": [{ "id": "q1", "chosen": 2, "correct": true, "timeMs": 48211, "flagged": false, "tags": ["…"] }]
+  "responses": [{ "id": "q1", "chosen": 2, "correct": true, "timeMs": 48211, "flagged": false, "confidence": "high", "tags": ["…"] }]
 }
 ```
 
 `chosen` is the **original** option index from the set file (or `null` if unanswered), whatever order the options were shown in.
+
+`confidence` is your optional self-rating for that question: `"low"`, `"medium"`, `"high"`, or `null` if you didn't rate it. It never affects the score.
 
 ## Adding sets to `/sets`
 
