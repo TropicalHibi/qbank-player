@@ -1,5 +1,6 @@
-// Quiz view. Tutor: answer locks and reveals immediately; navigator allows jumping to
-// answered questions (read-only) but not ahead. Exam: no feedback, free navigation,
+// Quiz view. Tutor: picking an option makes it pending; Submit answer (or Enter) locks it
+// and reveals feedback; navigator allows jumping to answered questions (read-only) but
+// not ahead. Exam: no feedback, free navigation,
 // answers changeable until Submit; optional block countdown.
 
 import { el, setChildren, showModal, announce, isDialogOpen, toast } from './dom.js';
@@ -58,8 +59,9 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
   const feedbackLive = el('div', { class: 'sr-only', attrs: { 'aria-live': 'assertive', 'aria-atomic': 'true' } });
   const prevBtn = el('button', { class: 'btn', type: 'button', text: '← Previous', on: { click: () => go(idx - 1) } });
   const flagBtn = el('button', { class: 'btn flag-btn', type: 'button', on: { click: toggleFlag } });
+  const submitBtn = exam ? null : el('button', { class: 'btn btn-primary submit-answer', type: 'button', text: 'Submit answer', on: { click: submitAnswer } });
   const nextBtn = el('button', { class: 'btn btn-primary', type: 'button', on: { click: next } });
-  const footer = el('div', { class: 'quiz-footer' }, prevBtn, flagBtn, el('span', { class: 'spacer' }), nextBtn);
+  const footer = el('div', { class: 'quiz-footer' }, prevBtn, flagBtn, el('span', { class: 'spacer' }), submitBtn, nextBtn);
   const help = el(
     'p',
     { class: 'kbd-help' },
@@ -75,7 +77,7 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
     el('kbd', { text: '6' }),
     ' for F) · ',
     el('kbd', { text: 'Enter' }),
-    exam ? ' next/submit · ' : ' next · ',
+    exam ? ' next/submit · ' : ' submit answer, then next · ',
     el('kbd', { text: 'F' }),
     ' flag · ',
     el('kbd', { text: '←' }),
@@ -117,6 +119,9 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
     } else {
       nextBtn.textContent = idx === N - 1 ? 'Finish' : 'Next →';
       nextBtn.disabled = !answered;
+      nextBtn.hidden = !answered;
+      submitBtn.hidden = answered;
+      submitBtn.disabled = it.pending === null;
     }
     progressFill.style.width = `${(answeredCount(session) / N) * 100}%`;
     renderNav();
@@ -236,20 +241,45 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
     save();
   }
 
+  function focusOption(d) {
+    card.querySelector(`button.option[data-display="${d}"]`)?.focus({ preventScroll: true });
+  }
+
   function select(original) {
     const it = items[idx];
-    if (!exam && it.chosen !== null) return; // locked in tutor mode
-    accrue();
-    it.chosen = original;
-    const q = byId.get(it.id);
     const d = it.order.indexOf(original);
-    render();
-    if (exam) announce(`Selected ${LETTERS[d]}.`);
-    else {
-      const ok = original === q.answer;
-      feedbackLive.textContent = ok ? 'Correct.' : `Incorrect. The correct answer is ${LETTERS[it.order.indexOf(q.answer)]}.`;
+    if (exam) {
+      accrue();
+      it.chosen = original;
+      render();
+      announce(`Selected ${LETTERS[d]}.`);
+    } else {
+      if (it.chosen !== null) return; // locked in tutor mode
+      it.pending = original; // not an answer until submitted
+      render();
+      announce(`${LETTERS[d]} selected, press Enter to submit.`);
     }
-    card.querySelector(`button.option[data-display="${d}"]`)?.focus({ preventScroll: true });
+    focusOption(d);
+    save();
+  }
+
+  /** Tutor mode: lock in the pending choice and reveal feedback. */
+  function submitAnswer() {
+    const it = items[idx];
+    if (it.chosen !== null) return;
+    if (it.pending === null) {
+      announce('Choose an answer first.');
+      toast('Choose an answer first');
+      return;
+    }
+    accrue(); // timeMs stops accruing once chosen is set
+    it.chosen = it.pending;
+    it.pending = null;
+    const q = byId.get(it.id);
+    render();
+    const ok = it.chosen === q.answer;
+    feedbackLive.textContent = ok ? 'Correct.' : `Incorrect. The correct answer is ${LETTERS[it.order.indexOf(q.answer)]}.`;
+    focusOption(it.order.indexOf(it.chosen));
     save();
   }
 
@@ -268,8 +298,7 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
       return;
     }
     if (items[idx].chosen === null) {
-      announce('Choose an answer first.');
-      toast('Choose an answer first');
+      submitAnswer(); // submits the pending choice, or asks for one
       return;
     }
     if (idx < N - 1) go(idx + 1);

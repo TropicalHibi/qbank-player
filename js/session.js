@@ -3,6 +3,9 @@
 //
 // Responses always store ORIGINAL option indexes (`chosen`), so scoring never depends
 // on display order. `item.order[displayIndex] === originalIndex`.
+//
+// `pending` (tutor mode) is an original index the user has picked but not yet submitted.
+// It never counts as an answer: only `chosen` is used for scoring and progress.
 
 import { shuffle, mulberry32, randomSeed, hashString, slug, fileTimestamp, truncate, stripMarkdown, formatDuration, LETTERS } from './util.js';
 
@@ -84,7 +87,7 @@ export function buildSession(set, o = {}) {
   if (count && count > 0 && count < chosen.length) chosen = chosen.slice(0, count);
   const items = chosen.map((id) => {
     const base = byId.get(id).options.map((_, i) => i);
-    return { id, order: shuffleOptions ? shuffle(base, rng) : base, chosen: null, timeMs: 0, flagged: false };
+    return { id, order: shuffleOptions ? shuffle(base, rng) : base, chosen: null, pending: null, timeMs: 0, flagged: false };
   });
   return {
     v: 1,
@@ -115,6 +118,21 @@ export function isSessionValid(set, s) {
     if (!sorted.every((v, i) => v === i)) return false;
     return it.chosen === null || (Number.isInteger(it.chosen) && it.chosen >= 0 && it.chosen < q.options.length);
   });
+}
+
+/**
+ * Bring a stored session (already checked with isSessionValid) up to the current shape, in place.
+ * Older saves have no `pending`; a missing or out-of-range pending becomes null, and a
+ * pending choice is dropped once the question has been answered.
+ */
+export function normalizeSession(set, s) {
+  const byId = indexById(set);
+  for (const it of s.items) {
+    const n = byId.get(it.id).options.length;
+    const p = it.pending;
+    it.pending = it.chosen === null && Number.isInteger(p) && p >= 0 && p < n ? p : null;
+  }
+  return s;
 }
 
 export const displayIndexOf = (item, original) => item.order.indexOf(original);

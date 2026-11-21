@@ -912,6 +912,10 @@ button.option:hover {
 .option.selected .opt-mark {
   color: var(--accent);
 }
+/* Tutor mode: picked but not yet submitted. */
+.option.pending {
+  border-style: dashed;
+}
 .option.correct,
 .revealed button.option.correct:hover {
   border-color: var(--correct-border);
