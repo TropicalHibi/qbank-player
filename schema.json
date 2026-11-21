@@ -67,6 +67,18 @@
           "type": "string",
           "description": "One line: the key distinction this question tests."
         },
+        "explanation": {
+          "type": "string",
+          "description": "Optional overall explanation shown after answering. Same inline markdown as the stem."
+        },
+        "explanationImages": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(?:https?://|data:image/|(?![A-Za-z][A-Za-z0-9+.-]*:)).+"
+          },
+          "description": "Optional images for the explanation: direct http(s) links, relative paths or data:image/ URIs."
+        },
         "tags": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 },

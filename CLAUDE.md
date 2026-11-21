@@ -32,14 +32,14 @@ A static, vanilla-JS web app that plays board-style (USMLE Step 1 / COMLEX Level
 Before opening a PR, run both:
 
 ```bash
-node tests/validate.test.mjs
+npm test
 ```
 
 ```bash
 node tests/smoke.mjs
 ```
 
-- `validate.test.mjs` has no dependencies and runs in CI. `smoke.mjs` is local only: it needs Playwright and Chromium plus `npm install` once (for the `axe-core` devDependency), and it serves the site under `/qbank-player/`.
+- `validate.test.mjs`, `setops.test.mjs` and `backup.test.mjs` have no dependencies and run in CI (`npm test` runs all of them; a new unit-test file must also be added to both workflows and the `test` script). `smoke.mjs` is local only: it needs Playwright and Chromium plus `npm install` once (for the `axe-core` devDependency), and it serves the site under `/qbank-player/`.
 - `smoke.mjs` runs an axe-core accessibility scan (`a11y(view)`) on every main view, the modal and the lightbox, in light and dark themes. `serious` and `critical` violations fail the run; `moderate` ones are printed as warnings. Call `a11y()` on any new view or dialog you add. Don't add to `A11Y_ALLOW` to get a PR green; fix the issue, or allowlist it only with a linked issue.
 - Add tests for new behavior: unit tests for the DOM-free modules, smoke-test steps for UI flows.
 - Adding a set means putting the file in `sets/` and adding a matching entry (same `title` and `count`) to `sets/index.json`. The tests check both.
@@ -48,7 +48,7 @@ node tests/smoke.mjs
 
 ## Module map
 
-DOM-free (also run under Node and are unit-tested): `util.js`, `validate.js`, `loader.js`, `session.js`, `prompt.js`, `backup.js`.
+DOM-free (also run under Node and are unit-tested): `util.js`, `validate.js`, `loader.js`, `session.js`, `prompt.js`, `setops.js`, `backup.js`.
 
 - `js/app.js`: index.html entry point; routing (Library → Start → Quiz → Results), app state, and the Library view (file/paste/`?set=` loading, bundled and recent sets).
 - `js/backup.js`: backup file format; `validateBackup()`, the pure `mergeBackup()` rules (newer progress/results win, recents merged and capped, backup prefs win), `backupFilename()`.
@@ -60,6 +60,7 @@ DOM-free (also run under Node and are unit-tested): `util.js`, `validate.js`, `l
 - `js/render.js`: question rendering shared by the quiz and the results review (stem, image, options, explanations, discriminator, tags).
 - `js/results.js`: results view with score, per-tag breakdown, review list, redo/retake, JSON export and the Claude summary.
 - `js/session.js`: session model; `setKey()`, tag pool filtering, seeded shuffling with answer remap (responses store original indexes), scoring, export, summaries.
+- `js/setops.js`: set operations: `mergeSets()` (renames colliding ids with a source-slug prefix, optional dedupe), `splitSet()` by tag or count, and `findDuplicates()` (stem-token Jaccard plus matching correct answer). Never mutates its inputs.
 - `js/start.js`: start screen with mode, timer, shuffle options, tag chips, the "Missed last session" filter and the question count.
 - `js/storage.js`: localStorage (progress, last results, recents, prefs) and IndexedDB (full set copies), with failures caught; `exportAll()` / `importAll()` for backups.
 - `js/theme-init.js`: classic (non-module) script in `<head>` that applies the saved theme before first paint and wires the toggle.
@@ -69,4 +70,4 @@ DOM-free (also run under Node and are unit-tested): `util.js`, `validate.js`, `l
 Other files:
 - `schema.json`: JSON Schema draft 2020-12 for sets.
 - `sets/index.json`: manifest of bundled sets (`[{file, title, count}]`).
-- `tests/`: `validate.test.mjs` (unit tests plus validation of every set), `backup.test.mjs` (backup format and merge unit tests) and `smoke.mjs` (Playwright end-to-end run with axe-core accessibility scans).
+- `tests/`: `validate.test.mjs` (unit tests plus validation of every set), `setops.test.mjs` (set operations unit tests), `backup.test.mjs` (backup format and merge unit tests) and `smoke.mjs` (Playwright end-to-end run with axe-core accessibility scans).

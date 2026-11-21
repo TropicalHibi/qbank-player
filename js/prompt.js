@@ -87,6 +87,18 @@ export const SCHEMA = {
           "type": "string",
           "description": "One line: the key distinction this question tests."
         },
+        "explanation": {
+          "type": "string",
+          "description": "Optional overall explanation shown after answering. Same inline markdown as the stem."
+        },
+        "explanationImages": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(?:https?://|data:image/|(?![A-Za-z][A-Za-z0-9+.-]*:)).+"
+          },
+          "description": "Optional images for the explanation: direct http(s) links, relative paths or data:image/ URIs."
+        },
         "tags": {
           "type": "array",
           "items": {
@@ -131,6 +143,8 @@ Rules:
 - {OPTIONS} answer options per question, all plausible and homogeneous (same category).
 - Every option gets an explanation of why it is right or wrong.
 - Every question gets a one-line "discriminator": the key distinction being tested.
+- Every question gets an "explanation": the overall teaching point in a few sentences (same inline formatting as the stem).
+- "explanationImages" is optional: include only direct image links you are confident exist; otherwise leave it out.
 - Do not cue the topic or diagnosis in the stem; avoid "which of the following is true" list items.
 - Distribute correct answer positions evenly; "answer" is the zero-based index.
 - Tags: [organ system, discipline, specific topic], lowercase.
@@ -200,6 +214,8 @@ export const EXAMPLE_QUESTION = {
     { text: 'Hypothalamic TRH deficiency', explanation: 'Tertiary hypothyroidism gives low/inappropriately normal TSH, not markedly elevated TSH.' },
   ],
   answer: 0,
+  explanation:
+    'Elevated TSH with low free T4 localizes the problem to the thyroid itself (primary hypothyroidism). In iodine-sufficient regions the most common cause is **Hashimoto thyroiditis**, an autoimmune destruction of the gland marked by anti-TPO antibodies and lymphocytic infiltration with germinal centers. Central (pituitary or hypothalamic) causes produce a low or inappropriately normal TSH.',
   discriminator: 'High TSH + low free T4 = primary hypothyroidism; most often autoimmune (anti-TPO) rather than central causes.',
   tags: ['endocrine', 'pathology', 'hashimoto thyroiditis'],
   source: 'Original example (qbank-player)',
