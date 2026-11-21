@@ -12,7 +12,7 @@ Closes #
 
 ## Checklist
 - [ ] `npm test` passes
-- [ ] `npm run smoke` passes (new behavior has a smoke step)
+- [ ] `npm run smoke` passes (new behavior has a smoke step; new views/dialogs get an `a11y()` scan)
 - [ ] No frameworks, CDNs, or build step; relative paths only (works under `/qbank-player/`)
 - [ ] Set content stays untrusted: escaped before md-lite, no `innerHTML` of set strings, image URL allowlist intact
 - [ ] Schema unchanged, **or** `schema.json` + `js/prompt.js` updated together and version/migration noted below
