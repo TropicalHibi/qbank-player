@@ -84,6 +84,8 @@ The formal definition is in [`schema.json`](schema.json) (JSON Schema draft 2020
       ],
       "answer": 0,
       "discriminator": "One line: the key distinction tested.",
+      "explanation": "Optional overall teaching point, same formatting as the stem.",
+      "explanationImages": ["https://… | relative/path.png | data:image/…"],
       "tags": ["renal", "pharmacology", "potassium-sparing diuretics"],
       "source": "Sketchy Pharm p.12"
     }
@@ -103,6 +105,8 @@ The formal definition is in [`schema.json`](schema.json) (JSON Schema draft 2020
 | `questions[].options` | ✓ | 2–8 items, each `{ "text", "explanation" }` (both required, non-empty). Shown labeled A–H. |
 | `questions[].answer` | ✓ | Zero-based index into `options`. |
 | `questions[].discriminator` | | Shown in a highlighted "Key distinction" box after answering. |
+| `questions[].explanation` | | Overall explanation of the question. Same formatting as the stem. An empty string is treated as absent. |
+| `questions[].explanationImages` | | Array of images for the explanation. Each follows the same rules as `image`. |
 | `questions[].tags` | | Array of strings, used for filtering and the per-tag breakdown. Hidden until a question is answered. |
 | `questions[].source` | | Free-text reference. |
 

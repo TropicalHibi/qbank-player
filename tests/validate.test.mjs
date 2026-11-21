@@ -136,6 +136,42 @@ test('unknown fields are warnings, not errors', () => {
 test('bad tags type', () => {
   assert.deepEqual(errorsOf(mkSet([mkQ('q1', { tags: 'cardio' })])), ['q1: "tags" must be an array of strings (got a string ("cardio")).']);
 });
+test('question explanation + explanationImages: valid forms, no warnings', () => {
+  const cases = [
+    { explanation: 'Overall **point**.', explanationImages: ['https://x.org/a.png', 'img/b.png', 'data:image/png;base64,AAAA'] },
+    { explanation: 'Only text.' },
+    { explanationImages: ['//cdn.example/x.png'] },
+    { explanation: '' },
+    { explanation: '   \n ' },
+    { explanationImages: [] },
+  ];
+  for (const extra of cases) {
+    const r = validateSet(mkSet([mkQ('q1', extra)]));
+    assert.deepEqual(r.errors, [], JSON.stringify(extra));
+    assert.deepEqual(r.warnings, [], JSON.stringify(extra));
+  }
+});
+test('question explanation + explanationImages: invalid forms name question and index', () => {
+  assert.deepEqual(errorsOf(mkSet([mkQ('q1', { explanation: 42 })])), ['q1: "explanation" must be a string (got a number).']);
+  assert.deepEqual(errorsOf(mkSet([mkQ('q2', { explanationImages: 'https://x.org/a.png' })])), [
+    'q2: "explanationImages" must be an array of image URLs (got a string ("https://x.org/a.png")).',
+  ]);
+  assert.deepEqual(errorsOf(mkSet([mkQ('q3', { explanationImages: ['a.png', 7] })])), [
+    'q3: explanationImages[1] must be a non-empty string (got a number).',
+  ]);
+  assert.deepEqual(errorsOf(mkSet([mkQ('q7', { explanationImages: ['a.png', 'javascript:alert(1)'] })])), [
+    'q7: explanationImages[1] is not an allowed image URL (javascript:alert(1)).',
+  ]);
+  // position label when there is no usable id
+  const noId = mkQ('', { explanationImages: [' java\tscript:alert(1)'] });
+  assert.ok(errorsOf(mkSet([noId])).includes('question 1: explanationImages[0] is not an allowed image URL ( java\tscript:alert(1)).'));
+});
+test('prompt asks for explanation; explanationImages optional; example has explanation', () => {
+  const p = fillPrompt();
+  assert.match(p, /Every question gets an "explanation"/);
+  assert.match(p, /"explanationImages" is optional/);
+  assert.ok(typeof EXAMPLE_QUESTION.explanation === 'string' && EXAMPLE_QUESTION.explanation.trim().length > 0);
+});
 
 /* ---------- loader ---------- */
 section('Loader: fences, prose, repairs, parse errors');

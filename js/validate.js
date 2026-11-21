@@ -9,7 +9,7 @@ export const MIN_OPTIONS = 2;
 export const MAX_OPTIONS = 8;
 
 const TOP_KEYS = new Set(['$schema', 'title', 'version', 'description', 'questions']);
-const Q_KEYS = new Set(['id', 'stem', 'image', 'options', 'answer', 'discriminator', 'tags', 'source']);
+const Q_KEYS = new Set(['id', 'stem', 'image', 'options', 'answer', 'discriminator', 'tags', 'source', 'explanation', 'explanationImages']);
 const OPT_KEYS = new Set(['text', 'explanation']);
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -157,6 +157,27 @@ export function validateSet(data) {
     // optional strings
     for (const f of ['discriminator', 'source']) {
       if (f in q && typeof q[f] !== 'string') errors.push(`${L}: "${f}" must be a string (got ${typeName(q[f])}).`);
+    }
+
+    // overall explanation (blank is allowed and treated as absent)
+    if ('explanation' in q && typeof q.explanation !== 'string') {
+      errors.push(`${L}: "explanation" must be a string (got ${typeName(q.explanation)}).`);
+    }
+
+    // explanation images
+    if ('explanationImages' in q) {
+      if (!Array.isArray(q.explanationImages)) {
+        errors.push(`${L}: "explanationImages" must be an array of image URLs (got ${typeName(q.explanationImages)}).`);
+      } else {
+        q.explanationImages.forEach((u, k) => {
+          if (typeof u !== 'string' || !u.trim()) {
+            errors.push(`${L}: explanationImages[${k}] must be a non-empty string (got ${typeName(u)}).`);
+          } else if (!isSafeImageUrl(u)) {
+            const shown = u.length > 30 ? u.slice(0, 30) + '…' : u;
+            errors.push(`${L}: explanationImages[${k}] is not an allowed image URL (${shown}).`);
+          }
+        });
+      }
     }
 
     // tags
