@@ -912,6 +912,10 @@ button.option:hover {
 .option.selected .opt-mark {
   color: var(--accent);
 }
+/* Tutor mode: picked but not yet submitted. */
+.option.pending {
+  border-style: dashed;
+}
 .option.correct,
 .revealed button.option.correct:hover {
   border-color: var(--correct-border);
@@ -962,7 +966,7 @@ button.option {
   border-style: dashed;
   opacity: 0.7;
 }
-.option.struck:not(.correct):not(.incorrect) {
+.option.struck:not(.correct):not(.incorrect):not(.selected) {
   background: var(--bg);
 }
 .strike-btn {

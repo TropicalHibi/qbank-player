@@ -86,9 +86,36 @@ try {
       log('image lightbox opens and closes with Esc');
     }
     assert.equal(await page.$$eval('.strike-btn', (x) => x.length), await page.$$eval('.options .option', (x) => x.length), 'strike button per option');
-    // Pick B on odd questions, the shown correct one is unknown, so just choose by key.
-    await page.keyboard.press(i % 2 ? 'b' : '1');
-    await page.waitForSelector('.feedback');
+    if (i === 0) {
+      // Confirm-before-submit: Enter with nothing picked, then select → change → submit.
+      assert.equal(await page.isDisabled('button.submit-answer'), true, 'Submit answer disabled until something is picked');
+      assert.equal(await page.isVisible('.quiz-footer button:has-text("Next")'), false, 'Next hidden until answered');
+      await page.evaluate(() => document.activeElement?.blur()); // focus may be on the image button after the lightbox
+      await page.keyboard.press('Enter');
+      await page.waitForSelector('#toast.show:has-text("Choose an answer first")');
+      await page.keyboard.press('Shift+A');
+      await page.waitForSelector('.option.struck[data-display="0"]');
+      await page.keyboard.press('a');
+      await page.waitForSelector('.option.pending[data-display="0"]');
+      assert.equal(await page.$('.option.struck'), null, 'picking a struck option (pending) clears its strike');
+      assert.equal(await page.$('.feedback'), null, 'no reveal while pending');
+      await page.waitForSelector('#sr-live:has-text("A selected, press Enter to submit")'); // set on the next frame
+      await page.keyboard.press('2');
+      assert.deepEqual(await page.$$eval('.option.pending', (x) => x.map((b) => b.dataset.display)), ['1'], 'new pick replaces the old one');
+      assert.equal(await page.getAttribute('.option[data-display="1"]', 'aria-pressed'), 'true');
+      assert.equal(await page.textContent('.navigator summary'), 'Navigator · 0/5 answered', 'pending is not answered');
+      await page.click('button.submit-answer');
+      await page.waitForSelector('.feedback');
+      assert.equal(await page.isVisible('button.submit-answer'), false);
+      assert.match(await page.$eval('.option[data-display="1"]', (b) => b.className), /\b(correct|incorrect)\b/, 'the changed pick was graded');
+      log('tutor confirm-before-submit: empty Enter toast, select → change → submit → reveal');
+    } else {
+      // Pick B on odd questions, the shown correct one is unknown, so just choose by key.
+      await page.keyboard.press(i % 2 ? 'b' : '1');
+      assert.equal(await page.$('.feedback'), null, 'no reveal before submitting');
+      await page.keyboard.press('Enter'); // submit
+      await page.waitForSelector('.feedback');
+    }
     assert.equal(await page.$('.strike-btn'), null, 'strikes are read-only once a tutor answer is locked');
     const nOpts = await page.$$eval('.options .option', (x) => x.length);
     const nExpl = await page.$$eval('.options .explanation', (x) => x.length);
@@ -238,7 +265,9 @@ try {
     await tp.waitForSelector('#start-title');
     await tp.click('button[type=submit]:has-text("Start")');
     await tp.waitForSelector('.question-card');
-    const box = await tp.locator('.question-card button.option[data-display="1"]').boundingBox();
+    const target = tp.locator('.question-card button.option[data-display="1"]');
+    await target.scrollIntoViewIfNeeded();
+    const box = await target.boundingBox();
     const cdp = await t.newCDPSession(tp);
     const pt = [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }];
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt });
@@ -248,7 +277,7 @@ try {
     assert.deepEqual(await tp.$$eval('.question-card button.option.struck', (x) => x.map((b) => +b.dataset.display)), [1], 'long-press strikes');
     assert.equal(await tp.$('.feedback'), null, 'long-press does not select');
     await tp.tap('.question-card button.option[data-display="1"]');
-    await tp.waitForSelector('.feedback');
+    await tp.waitForSelector('.question-card .option.pending[data-display="1"]');
     assert.equal(await tp.$('.question-card .option.struck'), null, 'tapping a struck option selects it and clears the strike');
     await t.close();
     log('touch long-press strikes without selecting');
@@ -321,6 +350,7 @@ try {
     await mp.click('button[type=submit]:has-text("Start")');
     await mp.waitForSelector('.question-card');
     await mp.keyboard.press('a');
+    await mp.keyboard.press('Enter');
     await mp.waitForSelector('.feedback');
     await shot('mobile-dark', mp);
     await m.close();

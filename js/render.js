@@ -90,7 +90,8 @@ function bindStrikeGestures(btn, fire) {
 /**
  * Render answer options.
  * @param {object} q question
- * @param {object} item session item ({order, chosen, struck})
+ * @param {object} item session item ({order, chosen, pending?, struck?}); before reveal, a pending
+ *   (unsubmitted, tutor mode) choice is shown as selected
  * @param {{reveal: boolean, interactive: boolean, onSelect?: (original:number)=>void, onStrike?: (original:number)=>void}} o
  *   With `onStrike`, each option gets a strike toggle button, plus right-click / long-press.
  *   Without it, strikes are shown read-only.
@@ -101,6 +102,7 @@ export function renderOptions(q, item, { reveal, interactive, onSelect, onStrike
     const opt = q.options[orig];
     const isCorrect = orig === q.answer;
     const isChosen = item.chosen === orig;
+    const isPending = !reveal && item.chosen === null && item.pending != null && item.pending === orig;
     const struck = isStruck(item, orig);
     let state = '';
     let mark = '';
@@ -119,6 +121,10 @@ export function renderOptions(q, item, { reveal, interactive, onSelect, onStrike
       state = 'selected';
       mark = '●';
       srNote = ' (selected)';
+    } else if (isPending) {
+      state = 'selected pending';
+      mark = '●';
+      srNote = ' (selected, not submitted)';
     }
     const content = [
       el('span', { class: 'opt-letter', attrs: { 'aria-hidden': 'true' }, text: LETTERS[d] }),
@@ -135,7 +141,7 @@ export function renderOptions(q, item, { reveal, interactive, onSelect, onStrike
             class: cls,
             type: 'button',
             dataset: { display: String(d) },
-            attrs: { 'aria-pressed': String(isChosen), 'aria-label': null },
+            attrs: { 'aria-pressed': String(isChosen || isPending), 'aria-label': null },
             on: {
               click: () => {
                 if (gestures && gestures.consumeClick()) return;

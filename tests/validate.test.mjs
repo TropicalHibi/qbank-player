@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { validateSet } from '../js/validate.js';
 import { extractJsonText, repairJson, parseJsonText, loadSetFromText } from '../js/loader.js';
 import { shuffle, mulberry32, slug, hashString, renderMarkdownLite, isSafeImageUrl, fileTimestamp, stripMarkdown } from '../js/util.js';
-import { buildSession, scoreSession, buildExport, resultsFilename, buildClaudeSummary, setKey, poolIds, collectTags, isSessionValid, normalizeSession, toggleStrike, clearStrike, isStruck, UNTAGGED } from '../js/session.js';
+import { buildSession, scoreSession, buildExport, resultsFilename, buildClaudeSummary, setKey, poolIds, collectTags, isSessionValid, normalizeSession, answeredCount, toggleStrike, clearStrike, isStruck, UNTAGGED } from '../js/session.js';
 import { SCHEMA, fillPrompt, EXAMPLE_QUESTION, PROMPT_TEMPLATE } from '../js/prompt.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -395,6 +395,34 @@ test('older saved sessions without struck load as [] and bad values are dropped'
   assert.deepEqual(s.items[0].struck, []);
   assert.deepEqual(s.items[1].struck, []);
   assert.deepEqual(s.items[2].struck, [0, 2]);
+});
+test('pending (unsubmitted) choice is not an answer and survives save/load', () => {
+  const s = buildSession(set, { seed: 7, shuffleQuestions: false });
+  assert.ok(s.items.every((it) => it.pending === null));
+  const q1 = set.questions[0];
+  s.items[0].pending = q1.answer; // picked the right option but did not submit
+  assert.equal(answeredCount(s), 0);
+  const r = scoreSession(set, s);
+  assert.equal(r.score, 0);
+  assert.equal(r.responses[0].chosen, null);
+  assert.ok(r.missedIds.includes('q1'), 'pending counts as missed');
+  assert.equal(buildExport(set, s).responses[0].chosen, null);
+  const loaded = JSON.parse(JSON.stringify(s));
+  assert.ok(isSessionValid(set, loaded));
+  normalizeSession(set, loaded);
+  assert.equal(loaded.items[0].pending, q1.answer);
+  assert.equal(answeredCount(loaded), 0);
+});
+test('older saved sessions without pending load with pending = null', () => {
+  const old = JSON.parse(JSON.stringify(buildSession(set, { seed: 3 })));
+  for (const it of old.items) delete it.pending;
+  old.items[1].chosen = 2;
+  old.items[2].pending = 99; // corrupt value
+  old.items[1].pending = 0; // stale: already answered
+  assert.ok(isSessionValid(set, old));
+  normalizeSession(set, old);
+  assert.ok(old.items.every((it) => it.pending === null));
+  assert.equal(old.items[1].chosen, 2);
 });
 
 /* ---------- prompt ---------- */
