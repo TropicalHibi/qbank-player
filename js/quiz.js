@@ -132,7 +132,7 @@ export function startQuiz(root, { set, session, persist, onFinish, onExit }) {
       });
     }
     hideHlButton();
-    setChildren(card, el('div', { class: 'q-head' }, heading, toolbar), renderStem(q, it), renderImage(q, idx + 1), options, feedback, ...(reveal ? renderReveal(q) : []));
+    setChildren(card, el('div', { class: 'q-head' }, heading, toolbar), renderStem(q, it), renderImage(q, idx + 1), options, feedback, ...(reveal ? renderReveal(q, idx + 1) : []));
     clearHlBtn.disabled = !itemHighlights(it).length;
 
     flagBtn.setAttribute('aria-pressed', String(!!it.flagged));
